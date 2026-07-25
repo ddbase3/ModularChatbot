@@ -1,3 +1,5 @@
+const coreEventNames = ['msgid', 'token', 'done', 'error'];
+
 export class SseChatTransport {
 	constructor(options = {}) {
 		this.options = options;
@@ -60,7 +62,10 @@ export class SseChatTransport {
 				dispatch('message', event.data);
 			};
 
-			const eventNames = new Set(['done', 'error', ...events.map((eventName) => String(eventName))]);
+			const eventNames = new Set([
+				...coreEventNames,
+				...events.map((eventName) => String(eventName))
+			]);
 			eventNames.forEach((eventName) => {
 				eventSource.addEventListener(eventName, (event) => {
 					dispatch(eventName, event.data);
