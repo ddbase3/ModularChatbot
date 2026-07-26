@@ -1,4 +1,5 @@
-import { MistralRealtimeSpeechToTextProvider } from '../speech/MistralRealtimeSpeechToTextProvider.js';
+import { BackendTextToSpeechProvider } from '../speech/BackendTextToSpeechProvider.js';
+import { BackendRealtimeSpeechToTextProvider } from '../speech/BackendRealtimeSpeechToTextProvider.js';
 
 function cleanText(value) {
 	return String(value || '')
@@ -20,7 +21,7 @@ function normalizeSttOptions(value) {
 			enabled: value.enabled !== false,
 			provider: String(value.provider || 'browser'),
 			sessionUrl: String(value.sessionUrl || ''),
-			speechThreshold: Number(value.speechThreshold || 0.015)
+			speechThreshold: Number(value.speechThreshold || 0.004)
 		};
 	}
 
@@ -28,7 +29,23 @@ function normalizeSttOptions(value) {
 		enabled: Boolean(value),
 		provider: 'browser',
 		sessionUrl: '',
-		speechThreshold: 0.015
+		speechThreshold: 0.004
+	};
+}
+
+function normalizeTtsOptions(value) {
+	if (value && typeof value === 'object') {
+		return {
+			enabled: value.enabled !== false,
+			provider: String(value.provider || 'browser'),
+			speechUrl: String(value.speechUrl || '')
+		};
+	}
+
+	return {
+		enabled: Boolean(value),
+		provider: 'browser',
+		speechUrl: ''
 	};
 }
 
@@ -43,9 +60,11 @@ function setDisabled(button, disabled) {
 }
 
 function cancelSpeech(state) {
+	state.speechToken += 1;
 	if ('speechSynthesis' in window) {
 		window.speechSynthesis.cancel();
 	}
+	state.backendTtsProvider?.stop();
 	state.speaking = false;
 	setPressed(state.speakerButton, state.speechEnabled);
 }
@@ -89,48 +108,94 @@ function endDialogMode(context, state) {
 	});
 }
 
-function speak(context, options, state, text, onEnd) {
+function beginSpeech(context, state, text) {
+	state.speaking = true;
+	setPressed(state.speakerButton, true);
+	context.events.emit('voice:tts-started', {
+		chatbot: context.chatbot,
+		text
+	});
+}
+
+function finishSpeech(context, state, token, text, onEnd) {
+	if (token !== state.speechToken) {
+		return;
+	}
+	state.speaking = false;
+	setPressed(state.speakerButton, state.speechEnabled);
+	context.events.emit('voice:tts-ended', {
+		chatbot: context.chatbot,
+		text
+	});
+	onEnd?.();
+}
+
+function speakBrowser(context, options, state, text, token, onEnd) {
 	if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
-		const error = new Error('Browser text-to-speech is not available.');
-		context.events.emit('chatbot:error', error);
+		throw new Error('Browser text-to-speech is not available.');
+	}
+
+	window.speechSynthesis.cancel();
+	const utterance = new SpeechSynthesisUtterance(text);
+	utterance.lang = resolveLanguage(options);
+	utterance.onend = () => finishSpeech(context, state, token, text, onEnd);
+	utterance.onerror = (event) => {
+		if (token !== state.speechToken) {
+			return;
+		}
+		context.events.emit('chatbot:error', event);
+		finishSpeech(context, state, token, text);
 		if (state.dialogEnabled) {
 			endDialogMode(context, state);
 		}
-		return;
-	}
+	};
+	window.speechSynthesis.speak(utterance);
+}
 
+function speakBackend(context, options, state, text, token, onEnd) {
+	state.backendTtsProvider.speak(text, resolveLanguage(options))
+		.then(() => finishSpeech(context, state, token, text, onEnd))
+		.catch((error) => {
+			if (token !== state.speechToken || error?.name === 'AbortError') {
+				return;
+			}
+			state.speaking = false;
+			setPressed(state.speakerButton, state.speechEnabled);
+			context.events.emit('chatbot:error', error);
+			if (state.dialogEnabled) {
+				endDialogMode(context, state);
+			}
+		});
+}
+
+function speak(context, options, state, text, onEnd) {
 	const clean = cleanText(text);
 	if (!clean) {
 		onEnd?.();
 		return;
 	}
 
-	window.speechSynthesis.cancel();
-	const utterance = new SpeechSynthesisUtterance(clean);
-	utterance.lang = resolveLanguage(options);
-	state.speaking = true;
-	setPressed(state.speakerButton, true);
+	cancelSpeech(state);
+	const token = ++state.speechToken;
+	beginSpeech(context, state, clean);
 
-	const finish = () => {
+	try {
+		if (options.tts.provider === 'backend') {
+			speakBackend(context, options, state, clean, token, onEnd);
+			return;
+		}
+		speakBrowser(context, options, state, clean, token, onEnd);
+	} catch (error) {
+		if (token !== state.speechToken) {
+			return;
+		}
 		state.speaking = false;
 		setPressed(state.speakerButton, state.speechEnabled);
-		context.events.emit('voice:tts-ended', {
-			chatbot: context.chatbot,
-			text: clean
-		});
-		onEnd?.();
-	};
-
-	utterance.onend = finish;
-	utterance.onerror = (event) => {
-		context.events.emit('chatbot:error', event);
-		finish();
-	};
-	context.events.emit('voice:tts-started', {
-		chatbot: context.chatbot,
-		text: clean
-	});
-	window.speechSynthesis.speak(utterance);
+		context.events.emit('chatbot:error', error);
+		if (state.dialogEnabled) {
+			endDialogMode(context, state);
+		}
+	}
 }
 
 function applyTranscript(context, state, transcript, final) {
@@ -233,9 +298,10 @@ async function startRealtimeRecognition(context, options, state) {
 	state.recording = true;
 	setPressed(state.microphoneButton, true);
 
-	const provider = new MistralRealtimeSpeechToTextProvider({
+	const provider = new BackendRealtimeSpeechToTextProvider({
 		sessionUrl: options.stt.sessionUrl,
 		language: resolveLanguage(options),
+		autoStop: state.dialogEnabled,
 		speechThreshold: options.stt.speechThreshold,
 		onPartial: (text) => applyTranscript(context, state, text, false),
 		onFinal: (text) => {
@@ -246,7 +312,7 @@ async function startRealtimeRecognition(context, options, state) {
 			context.events.emit('voice:recording-started', {
 				chatbot: context.chatbot,
 				dialog: state.dialogEnabled,
-				provider: 'mistral-realtime'
+				provider: 'backend'
 			});
 		},
 		onEnd: () => {
@@ -273,7 +339,15 @@ async function startRealtimeRecognition(context, options, state) {
 	});
 
 	state.realtimeProvider = provider;
-	await provider.start();
+	try {
+		await provider.start();
+	} catch (error) {
+		provider.destroy();
+		if (state.realtimeProvider === provider) {
+			state.realtimeProvider = null;
+		}
+		throw error;
+	}
 }
 
 function startRecognition(context, options, state) {
@@ -282,7 +356,7 @@ function startRecognition(context, options, state) {
 	}
 
 	try {
-		if (options.stt.provider === 'mistral-realtime') {
+		if (options.stt.provider === 'backend') {
 			startRealtimeRecognition(context, options, state).catch((error) => {
 				state.recording = false;
 				setPressed(state.microphoneButton, false);
@@ -354,15 +428,22 @@ export const VoicePlugin = {
 		};
 		const options = {
 			...rawOptions,
-			stt: normalizeSttOptions(rawOptions.stt)
+			stt: normalizeSttOptions(rawOptions.stt),
+			tts: normalizeTtsOptions(rawOptions.tts)
 		};
 		const state = {
 			recognition: null,
 			realtimeProvider: null,
+			backendTtsProvider: options.tts.provider === 'backend'
+				? new BackendTextToSpeechProvider({
+					speechUrl: options.tts.speechUrl
+				})
+				: null,
 			recording: false,
 			speechEnabled: false,
 			dialogEnabled: false,
 			speaking: false,
+			speechToken: 0,
 			hadSpeechResult: false,
 			composerPrefix: '',
 			microphoneButton: null,
@@ -383,7 +464,7 @@ export const VoicePlugin = {
 			});
 		}
 
-		if (options.tts) {
+		if (options.tts.enabled) {
 			state.speakerButton = context.ui.addControl('composer-end', {
 				id: `${context.chatbot.instanceId}-voice-speaker`,
 				label: 'Sprachausgabe ein- oder ausschalten',
@@ -400,7 +481,7 @@ export const VoicePlugin = {
 			});
 		}
 
-		if (options.dialog && options.stt.enabled && options.tts) {
+		if (options.dialog && options.stt.enabled && options.tts.enabled) {
 			state.dialogButton = context.ui.addControl('composer-end', {
 				id: `${context.chatbot.instanceId}-voice-dialog`,
 				label: 'Wechselsprechen ein- oder ausschalten',
@@ -447,6 +528,7 @@ export const VoicePlugin = {
 		if (state) {
 			disposeRecognition(state);
 			cancelSpeech(state);
+			state.backendTtsProvider?.destroy();
 		}
 		this.states?.delete(context.chatbot);
 	}

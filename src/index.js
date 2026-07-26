@@ -45,4 +45,7 @@ export { SuggestionsPlugin } from './plugins/SuggestionsPlugin.js';
 export { ThreadsPlugin } from './plugins/ThreadsPlugin.js';
 export { VoicePlugin } from './plugins/VoicePlugin.js';
 
+export { BackendTextToSpeechProvider } from './speech/BackendTextToSpeechProvider.js';
+export { BackendRealtimeSpeechToTextProvider } from './speech/BackendRealtimeSpeechToTextProvider.js';
 export { MistralRealtimeSpeechToTextProvider } from './speech/MistralRealtimeSpeechToTextProvider.js';
+export { OpenAiRealtimeSpeechToTextProvider } from './speech/OpenAiRealtimeSpeechToTextProvider.js';

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MistralRealtimeSpeechToTextProvider } from '../src/speech/MistralRealtimeSpeechToTextProvider.js';
+import { OpenAiRealtimeSpeechToTextProvider } from '../src/speech/OpenAiRealtimeSpeechToTextProvider.js';
 
 class WebSocketMock {
 	static OPEN = 1;
@@ -66,15 +66,15 @@ function waitFor(predicate) {
 	});
 }
 
-test('mistral provider starts recording after session.created', async () => {
+async function runSessionCreatedTest() {
 	const originals = {
 		WebSocket: globalThis.WebSocket,
 		AudioContext: globalThis.AudioContext,
 		AudioWorkletNode: globalThis.AudioWorkletNode,
 		navigator: globalThis.navigator
 	};
+	const partial = [];
 	const final = [];
-	const ended = [];
 	const track = { stopped: false, stop() { this.stopped = true; } };
 
 	globalThis.WebSocket = WebSocketMock;
@@ -87,43 +87,46 @@ test('mistral provider starts recording after session.created', async () => {
 	WebSocketMock.instances = [];
 
 	try {
-		const provider = new MistralRealtimeSpeechToTextProvider({
+		const provider = new OpenAiRealtimeSpeechToTextProvider({
 			session: {
-				provider: 'mistral',
+				provider: 'openai',
 				transport: 'websocket',
-				endpoint: 'wss://api.mistral.ai/v1/audio/transcriptions/realtime?model=test',
-				clientToken: 'rt_test',
+				endpoint: 'wss://api.openai.com/v1/realtime',
+				clientToken: 'ek_test',
 				audioEncoding: 'pcm_s16le',
-				sampleRate: 16000,
-				options: { chunkDurationMs: 480, targetStreamingDelayMs: 1000 }
+				sampleRate: 24000,
+				options: {}
 			},
-			onFinal: (text) => final.push(text),
-			onEnd: (data) => ended.push(data)
+			onPartial: (text) => partial.push(text),
+			onFinal: (text) => final.push(text)
 		});
 		const start = provider.start();
 		await waitFor(() => WebSocketMock.instances.length === 1);
 		const socket = WebSocketMock.instances[0];
-		assert.deepEqual(socket.protocols, ['realtime', 'rt_test']);
+		assert.deepEqual(socket.protocols, [
+			'realtime',
+			'openai-insecure-api-key.ek_test'
+		]);
 
 		await socket.onmessage({ data: JSON.stringify({ type: 'session.created' }) });
-		assert.equal(socket.sent[0].type, 'session.update');
-		assert.deepEqual(socket.sent[0].session, {
-			audio_format: {
-				encoding: 'pcm_s16le',
-				sample_rate: 16000
-			},
-			target_streaming_delay_ms: 1000
-		});
 		await start;
 		assert.equal(provider.recording, true);
 
-		provider.stop();
-		assert.equal(socket.sent.at(-2).type, 'input_audio.flush');
-		assert.equal(socket.sent.at(-1).type, 'input_audio.end');
+		await socket.onmessage({
+			data: JSON.stringify({ type: 'conversation.item.input_audio_transcription.delta', delta: 'Hallo ' })
+		});
+		assert.deepEqual(partial, ['Hallo']);
 
-		await socket.onmessage({ data: JSON.stringify({ type: 'transcription.done', text: 'Hallo Welt' }) });
+		provider.sendAudio(new Int16Array([1, 2, 3]));
+		provider.stop();
+		assert.equal(socket.sent.at(-1).type, 'input_audio_buffer.commit');
+		await socket.onmessage({
+			data: JSON.stringify({
+				type: 'conversation.item.input_audio_transcription.completed',
+				transcript: 'Hallo Welt'
+			})
+		});
 		assert.deepEqual(final, ['Hallo Welt']);
-		assert.equal(ended.length, 1);
 		assert.equal(track.stopped, true);
 		assert.equal(socket.closed, true);
 	} finally {
@@ -132,29 +135,8 @@ test('mistral provider starts recording after session.created', async () => {
 		globalThis.AudioWorkletNode = originals.AudioWorkletNode;
 		Object.defineProperty(globalThis, 'navigator', { configurable: true, value: originals.navigator });
 	}
-});
+}
 
-test('manual mistral recording is not stopped by local silence detection', () => {
-	let stops = 0;
-	const provider = new MistralRealtimeSpeechToTextProvider({
-		session: {
-			provider: 'mistral',
-			transport: 'websocket',
-			endpoint: 'wss://api.mistral.ai/v1/audio/transcriptions/realtime?model=test',
-			clientToken: 'rt_test',
-			audioEncoding: 'pcm_s16le',
-			sampleRate: 16000,
-			options: { silenceDurationMs: 100 }
-		},
-		autoStop: false
-	});
-	provider.startedSpeaking = true;
-	provider.lastSpeechAt = 1000;
-	provider.stop = () => {
-		stops += 1;
-	};
-
-	provider.handleLevel(0, 5000);
-
-	assert.equal(stops, 0);
+test('openai provider starts recording after session.created', async () => {
+	await runSessionCreatedTest();
 });
