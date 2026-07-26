@@ -29,6 +29,19 @@ Plugins are objects with a unique `name`. Optional capabilities include:
 
 Plugins must use the provided context and instance-local UI slots. They must not search the complete document for chatbot controls.
 
+Content renderers such as `MarkdownPlugin` implement `renderMessageContent()`. Post-render decorators such as `MathJaxPlugin` react to message lifecycle events instead of competing for the content-renderer slot. The relevant lifecycle is:
+
+```text
+message:rendering
+  -> content renderer
+  -> message:rendered
+  -> message:completed
+```
+
+`message:rendering` allows decorators to release state tied to the current DOM before the core replaces the message content. `MathJaxPlugin` typesets only after `message:completed`, so REST and SSE use the same stable final DOM and incomplete TeX from a running stream is not processed.
+
+When MathJax is enabled with Markdown, `MarkdownPlugin` protects complete `\(...\)` and `\[...\]` expressions before Marked parses the message and restores them in the generated HTML. This keeps standard MathJax delimiters intact without requiring model-specific doubled backslashes.
+
 ## UI slots
 
 The initial display provides:

@@ -39,6 +39,7 @@ export { AgentActivityPlugin } from './plugins/AgentActivityPlugin.js';
 export { AgentInteractionPlugin } from './plugins/AgentInteractionPlugin.js';
 export { CanvasPlugin } from './plugins/CanvasPlugin.js';
 export { MarkdownPlugin } from './plugins/MarkdownPlugin.js';
+export { MathJaxPlugin } from './plugins/MathJaxPlugin.js';
 export { MessageActionsPlugin } from './plugins/MessageActionsPlugin.js';
 export { ReferencePlugin } from './plugins/ReferencePlugin.js';
 export { SuggestionsPlugin } from './plugins/SuggestionsPlugin.js';

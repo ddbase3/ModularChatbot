@@ -11,7 +11,7 @@ The project is intentionally independent from the preserved ClassicChatbot clien
 - a plugin manager with explicit plugin options
 - instance-local UI slots
 - accessible native controls
-- Markdown, suggestions, feedback, reference, activity, interaction, canvas, thread and browser voice plugins
+- Markdown, MathJax, suggestions, feedback, reference, activity, interaction, canvas, thread and browser voice plugins
 - browser voice dialog mode with automatic listen, send, speak and listen switching
 - provider-backed realtime speech transcription with live composer updates
 
@@ -51,6 +51,35 @@ await mountChatbot(root, {
 ```
 
 The module keeps mounted instances in a `WeakMap`. It does not expose global constructors or instance properties on DOM elements.
+
+## MathJax
+
+`MathJaxPlugin` typesets completed assistant messages and base prompts after the normal content renderer has finished. It uses the self-hosted MathJax 4 component supplied through `pluginOptions.mathjax.scriptUrl` and loads it lazily only when mathematical delimiters or MathML are present.
+
+```javascript
+import {
+	mountChatbot,
+	MarkdownPlugin,
+	MathJaxPlugin
+} from './index.js';
+
+await mountChatbot(root, {
+	serviceUrl: '/chatbot',
+	plugins: [MarkdownPlugin, MathJaxPlugin],
+	pluginOptions: {
+		markdown: {
+			preserveMathJax: true
+		},
+		mathjax: {
+			scriptUrl: '/assets/mathjax/tex-mml-chtml.js'
+		}
+	}
+});
+```
+
+The canonical delimiters are `\(...\)` for inline mathematics and `\[...\]` for display mathematics. When Markdown and MathJax are enabled together, set `pluginOptions.markdown.preserveMathJax` to `true`. `MarkdownPlugin` then protects complete MathJax expressions before calling Marked and restores them afterwards, so models can emit ordinary MathJax TeX without doubled delimiter backslashes.
+
+MathJax processing starts only after the message is complete. REST and SSE therefore share exactly the same final typesetting path, and an incomplete streaming expression is never handed to MathJax.
 
 ## Current integration status
 

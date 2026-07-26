@@ -604,6 +604,10 @@ export class Chatbot {
 			return;
 		}
 
+		this.events.emit('message:rendering', {
+			...assistant
+		});
+
 		const handled = this.pluginManager.renderMessageContent({
 			element: assistant.content,
 			text: assistant.rawText,
