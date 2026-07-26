@@ -13,6 +13,7 @@ The project is intentionally independent from the preserved ClassicChatbot clien
 - accessible native controls
 - Markdown, suggestions, feedback, reference, activity, interaction, canvas, thread and browser voice plugins
 - browser voice dialog mode with automatic listen, send, speak and listen switching
+- provider-backed realtime speech transcription with live composer updates
 
 ## Source and deployment
 
@@ -57,4 +58,4 @@ The module keeps mounted instances in a `WeakMap`. It does not expose global con
 
 The ClientStack default binding remains `ClassicChatbotDisplay`. Projects can explicitly bind `UiFoundation\\Api\\IChatbotDisplay` to `ModularChatbotDisplay` when they want to test or activate the new client.
 
-Conversation history hydration and provider-backed STT/TTS are intentionally not part of this initial module step because the required backend contracts are not present yet.
+Mistral realtime STT is available when Chatbot supplies a configured short-lived session URL. Browser speech recognition remains available without backend configuration. Provider-backed TTS and conversation-history hydration remain separate later steps.

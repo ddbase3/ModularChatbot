@@ -44,3 +44,5 @@ export { ReferencePlugin } from './plugins/ReferencePlugin.js';
 export { SuggestionsPlugin } from './plugins/SuggestionsPlugin.js';
 export { ThreadsPlugin } from './plugins/ThreadsPlugin.js';
 export { VoicePlugin } from './plugins/VoicePlugin.js';
+
+export { MistralRealtimeSpeechToTextProvider } from './speech/MistralRealtimeSpeechToTextProvider.js';
