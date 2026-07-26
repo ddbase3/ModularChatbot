@@ -41,3 +41,13 @@ Additional slots can be added by displays without changing plugin APIs.
 ## Multiple instances
 
 Every `Chatbot` receives one root element. All queries and listeners are scoped to that root and its lifecycle. Conversation identity is separate from widget identity, so multiple widgets can intentionally use the same conversation without sharing DOM state.
+
+## Voice dialog mode
+
+`VoicePlugin` owns the browser speech lifecycle. Dialog mode alternates between one recognition turn and one assistant speech turn:
+
+```text
+listen -> send transcript -> wait for assistant -> speak response -> listen
+```
+
+The chatbot core only emits normal message lifecycle events. It does not contain speech-specific state.

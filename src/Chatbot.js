@@ -425,6 +425,8 @@ export class Chatbot {
 			return;
 		}
 
+		this.pendingInteraction = null;
+
 		const text = typeof payload === 'string'
 			? payload
 			: String(payload?.text ?? payload?.token ?? payload?.content ?? '');
@@ -459,6 +461,10 @@ export class Chatbot {
 			return;
 		}
 
+		if (!options.interaction) {
+			this.pendingInteraction = null;
+		}
+
 		if (this.renderTimer) {
 			window.clearTimeout(this.renderTimer);
 			this.renderTimer = null;
@@ -488,6 +494,8 @@ export class Chatbot {
 		if (!assistant || assistant.completed) {
 			return;
 		}
+
+		this.pendingInteraction = null;
 
 		assistant.completed = true;
 		assistant.error = true;

@@ -12,6 +12,7 @@ The project is intentionally independent from the preserved ClassicChatbot clien
 - instance-local UI slots
 - accessible native controls
 - Markdown, suggestions, feedback, reference, activity, interaction, canvas, thread and browser voice plugins
+- browser voice dialog mode with automatic listen, send, speak and listen switching
 
 ## Source and deployment
 
