@@ -21,8 +21,12 @@ export class ChatbotPluginManager {
 			},
 			getConversationId: () => this.chatbot.getConversationId(),
 			getActiveAssistant: () => this.chatbot.getActiveAssistant(),
+			isSending: () => this.chatbot.isSending(),
 			send: (options) => this.chatbot.send(options),
-			startNewConversation: () => this.chatbot.startNewConversation(),
+			setConversation: (conversation) => this.chatbot.setConversation(conversation),
+			clearConversation: () => this.chatbot.clearConversation(),
+			replaceMessages: (messages) => this.chatbot.replaceMessages(messages),
+			setOpeningMessage: (message) => this.chatbot.setOpeningMessage(message),
 			setComposerValue: (value) => this.chatbot.setComposerValue(value),
 			focusComposer: () => this.chatbot.focusComposer(),
 			resolveGlobal: (path) => this.chatbot.resolveGlobal(path),
@@ -30,13 +34,13 @@ export class ChatbotPluginManager {
 		};
 	}
 
-	installAll(pluginDefinitions) {
-		(pluginDefinitions || []).forEach((pluginDefinition) => {
-			this.install(pluginDefinition);
-		});
+	async installAll(pluginDefinitions) {
+		for (const pluginDefinition of pluginDefinitions || []) {
+			await this.install(pluginDefinition);
+		}
 	}
 
-	install(pluginDefinition) {
+	async install(pluginDefinition) {
 		if (!pluginDefinition || typeof pluginDefinition !== 'object') {
 			throw new Error('Plugins must be objects.');
 		}
@@ -57,14 +61,23 @@ export class ChatbotPluginManager {
 			});
 		});
 
-		if (typeof pluginDefinition.install === 'function') {
-			pluginDefinition.install(context);
-		}
-
-		this.plugins.push({
+		const record = {
 			plugin: pluginDefinition,
 			context
-		});
+		};
+		this.plugins.push(record);
+
+		try {
+			if (typeof pluginDefinition.install === 'function') {
+				await pluginDefinition.install(context);
+			}
+		} catch (error) {
+			if (typeof pluginDefinition.destroy === 'function') {
+				pluginDefinition.destroy(context);
+			}
+			this.plugins = this.plugins.filter((candidate) => candidate !== record);
+			throw error;
+		}
 	}
 
 	getTransportEvents() {
@@ -82,6 +95,22 @@ export class ChatbotPluginManager {
 		});
 
 		return [...events];
+	}
+
+	async prepareRequest(payload) {
+		let current = { ...payload };
+		for (const { plugin, context } of this.plugins) {
+			if (typeof plugin.prepareRequest !== 'function') {
+				continue;
+			}
+
+			const prepared = await plugin.prepareRequest(context, current);
+			if (prepared && typeof prepared === 'object') {
+				current = prepared;
+			}
+		}
+
+		return current;
 	}
 
 	transformRequest(payload) {

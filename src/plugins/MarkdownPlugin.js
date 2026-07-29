@@ -1,5 +1,5 @@
-import { loadScript } from '../utils/loadScript.js';
-import { patchExternalLinks } from '../utils/dom.js';
+import { loadScript } from '../utils/loadScript.js?build=conversation-draft-1';
+import { patchExternalLinks } from '../utils/dom.js?build=conversation-draft-1';
 
 const MATHJAX_EXPRESSION_PATTERN = /\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)/g;
 
@@ -48,7 +48,7 @@ export const MarkdownPlugin = {
 			});
 		}
 
-		context.events.on('baseprompt:loaded', ({ element }) => {
+		context.events.on('opening-message:loaded', ({ element }) => {
 			patchExternalLinks(element);
 		});
 	},

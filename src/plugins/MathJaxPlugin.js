@@ -1,4 +1,4 @@
-import { loadScript } from '../utils/loadScript.js';
+import { loadScript } from '../utils/loadScript.js?build=conversation-draft-1';
 
 function getGlobalTarget() {
 	return typeof window !== 'undefined' ? window : globalThis;
@@ -154,7 +154,13 @@ export const MathJaxPlugin = {
 				}
 				typesetElement(context, state, getMessageElement(payload), payload?.rawText);
 			}),
-			context.events.on('baseprompt:loaded', ({ element }) => {
+			context.events.on('message:hydrated', (payload) => {
+				if (payload?.role !== 'assistant' || payload?.error) {
+					return;
+				}
+				typesetElement(context, state, getMessageElement(payload), payload?.rawText);
+			}),
+			context.events.on('opening-message:loaded', ({ element }) => {
 				typesetElement(context, state, element, element?.textContent || '');
 			}),
 			context.events.on('conversation:changed', () => {

@@ -82,3 +82,32 @@ test('markdown plugin uses normal Markdown escaping when MathJax preservation is
 	assert.match(html, /The value is \(x\^2\)\./);
 	assert.doesNotMatch(html, /\\\(x\^2\\\)/);
 });
+
+test('markdown plugin handles opening-message link markup', () => {
+	const originalElement = globalThis.Element;
+	class FakeElement {
+		querySelectorAll() {
+			return [];
+		}
+	}
+	globalThis.Element = FakeElement;
+	const listeners = new Map();
+	const context = {
+		getPluginOptions: () => ({}),
+		resolveGlobal: () => null,
+		events: {
+			on(name, listener) {
+				listeners.set(name, listener);
+			}
+		}
+	};
+
+	try {
+		MarkdownPlugin.install(context);
+		assert.equal(listeners.has('opening-message:loaded'), true);
+		assert.equal(listeners.has('baseprompt:loaded'), false);
+		listeners.get('opening-message:loaded')({ element: new FakeElement() });
+	} finally {
+		globalThis.Element = originalElement;
+	}
+});

@@ -1,4 +1,4 @@
-import { Chatbot } from './Chatbot.js';
+import { Chatbot } from './Chatbot.js?build=conversation-draft-1';
 
 const mountedChatbots = new WeakMap();
 
@@ -10,8 +10,14 @@ export async function mountChatbot(root, options = {}) {
 
 	const chatbot = new Chatbot(root, options);
 	mountedChatbots.set(chatbot.root, chatbot);
-	await chatbot.init();
-	return chatbot;
+	try {
+		await chatbot.init();
+		return chatbot;
+	} catch (error) {
+		chatbot.destroy();
+		mountedChatbots.delete(chatbot.root);
+		throw error;
+	}
 }
 
 export function getMountedChatbot(root) {
@@ -28,25 +34,27 @@ export function unmountChatbot(root) {
 	mountedChatbots.delete(root);
 }
 
-export { Chatbot } from './Chatbot.js';
-export { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js';
-export { ChatbotEventBus } from './core/ChatbotEventBus.js';
-export { ChatbotPluginManager } from './core/ChatbotPluginManager.js';
-export { ChatbotUiRegistry } from './core/ChatbotUiRegistry.js';
-export { RestChatTransport } from './transport/RestChatTransport.js';
-export { SseChatTransport } from './transport/SseChatTransport.js';
-export { AgentActivityPlugin } from './plugins/AgentActivityPlugin.js';
-export { AgentInteractionPlugin } from './plugins/AgentInteractionPlugin.js';
-export { CanvasPlugin } from './plugins/CanvasPlugin.js';
-export { MarkdownPlugin } from './plugins/MarkdownPlugin.js';
-export { MathJaxPlugin } from './plugins/MathJaxPlugin.js';
-export { MessageActionsPlugin } from './plugins/MessageActionsPlugin.js';
-export { ReferencePlugin } from './plugins/ReferencePlugin.js';
-export { SuggestionsPlugin } from './plugins/SuggestionsPlugin.js';
-export { ThreadsPlugin } from './plugins/ThreadsPlugin.js';
-export { VoicePlugin } from './plugins/VoicePlugin.js';
+export { Chatbot } from './Chatbot.js?build=conversation-draft-1';
+export { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=conversation-draft-1';
+export { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
+export { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=conversation-draft-1';
+export { ChatbotUiRegistry } from './core/ChatbotUiRegistry.js?build=conversation-draft-1';
+export { RestChatTransport } from './transport/RestChatTransport.js?build=conversation-draft-1';
+export { SseChatTransport } from './transport/SseChatTransport.js?build=conversation-draft-1';
+export { ConversationApi, normalizeConversationState } from './conversation/ConversationApi.js?build=conversation-draft-1';
+export { ConversationView } from './conversation/ConversationView.js?build=conversation-title-contract-1';
+export { AgentActivityPlugin } from './plugins/AgentActivityPlugin.js?build=conversation-draft-1';
+export { AgentInteractionPlugin } from './plugins/AgentInteractionPlugin.js?build=conversation-draft-1';
+export { CanvasPlugin } from './plugins/CanvasPlugin.js?build=conversation-draft-1';
+export { ConversationPlugin } from './plugins/ConversationPlugin.js?build=conversation-title-contract-1';
+export { MarkdownPlugin } from './plugins/MarkdownPlugin.js?build=conversation-draft-1';
+export { MathJaxPlugin } from './plugins/MathJaxPlugin.js?build=conversation-draft-1';
+export { MessageActionsPlugin } from './plugins/MessageActionsPlugin.js?build=conversation-draft-1';
+export { ReferencePlugin } from './plugins/ReferencePlugin.js?build=conversation-draft-1';
+export { SuggestionsPlugin } from './plugins/SuggestionsPlugin.js?build=conversation-draft-1';
+export { VoicePlugin } from './plugins/VoicePlugin.js?build=conversation-draft-1';
 
-export { BackendTextToSpeechProvider } from './speech/BackendTextToSpeechProvider.js';
-export { BackendRealtimeSpeechToTextProvider } from './speech/BackendRealtimeSpeechToTextProvider.js';
-export { MistralRealtimeSpeechToTextProvider } from './speech/MistralRealtimeSpeechToTextProvider.js';
-export { OpenAiRealtimeSpeechToTextProvider } from './speech/OpenAiRealtimeSpeechToTextProvider.js';
+export { BackendTextToSpeechProvider } from './speech/BackendTextToSpeechProvider.js?build=conversation-draft-1';
+export { BackendRealtimeSpeechToTextProvider } from './speech/BackendRealtimeSpeechToTextProvider.js?build=conversation-draft-1';
+export { MistralRealtimeSpeechToTextProvider } from './speech/MistralRealtimeSpeechToTextProvider.js?build=conversation-draft-1';
+export { OpenAiRealtimeSpeechToTextProvider } from './speech/OpenAiRealtimeSpeechToTextProvider.js?build=conversation-draft-1';

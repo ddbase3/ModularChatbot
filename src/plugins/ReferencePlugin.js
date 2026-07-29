@@ -11,36 +11,41 @@ function normalizeReference(reference) {
 	};
 }
 
+export function resolveReference(context) {
+	const options = context.getPluginOptions('reference');
+	const mode = String(options.mode || 'url').toLowerCase();
+	let reference = null;
+
+	if (mode === 'none') {
+		return null;
+	}
+	if (mode === 'custom') {
+		reference = normalizeReference(options.reference || null);
+	} else if (mode === 'provider') {
+		const provider = context.resolveGlobal(String(options.provider || '').trim());
+		if (typeof provider === 'function') {
+			reference = normalizeReference(provider({
+				root: context.root,
+				options: context.getOptions()
+			}));
+		}
+	} else {
+		reference = normalizeReference({
+			type: 'page',
+			url: window.location.href,
+			title: document.title || '',
+			referrer: document.referrer || ''
+		});
+	}
+
+	return reference;
+}
+
 export const ReferencePlugin = {
 	name: 'reference',
 
 	transformRequest(context, payload) {
-		const options = context.getPluginOptions();
-		const mode = String(options.mode || 'url').toLowerCase();
-		let reference = null;
-
-		if (mode === 'none') {
-			return payload;
-		}
-		if (mode === 'custom') {
-			reference = normalizeReference(options.reference || null);
-		} else if (mode === 'provider') {
-			const provider = context.resolveGlobal(String(options.provider || '').trim());
-			if (typeof provider === 'function') {
-				reference = normalizeReference(provider({
-					root: context.root,
-					options: context.getOptions()
-				}));
-			}
-		} else {
-			reference = normalizeReference({
-				type: 'page',
-				url: window.location.href,
-				title: document.title || '',
-				referrer: document.referrer || ''
-			});
-		}
-
+		const reference = resolveReference(context);
 		if (!reference) {
 			return payload;
 		}

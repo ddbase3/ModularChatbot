@@ -1,10 +1,10 @@
-import { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js';
-import { ChatbotEventBus } from './core/ChatbotEventBus.js';
-import { ChatbotPluginManager } from './core/ChatbotPluginManager.js';
-import { ChatbotUiRegistry } from './core/ChatbotUiRegistry.js';
-import { RestChatTransport } from './transport/RestChatTransport.js';
-import { SseChatTransport } from './transport/SseChatTransport.js';
-import { createElement, resolveElement, scrollElementToBottom } from './utils/dom.js';
+import { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=conversation-draft-1';
+import { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
+import { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=conversation-draft-1';
+import { ChatbotUiRegistry } from './core/ChatbotUiRegistry.js?build=conversation-draft-1';
+import { RestChatTransport } from './transport/RestChatTransport.js?build=conversation-draft-1';
+import { SseChatTransport } from './transport/SseChatTransport.js?build=conversation-draft-1';
+import { createElement, resolveElement, scrollElementToBottom } from './utils/dom.js?build=conversation-draft-1';
 
 const defaultStrings = {
 	emptyResponse: 'Es konnte keine sichtbare Antwort erzeugt werden. Bitte versuche die Anfrage erneut.',
@@ -29,6 +29,27 @@ function createId(prefix) {
 	}
 
 	return `${prefix}-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeMessage(value) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		return null;
+	}
+
+	const role = String(value.role || '').trim().toLowerCase();
+	if (!['user', 'assistant'].includes(role)) {
+		return null;
+	}
+
+	return {
+		id: String(value.id || value.message_id || '').trim(),
+		role,
+		content: String(value.content || ''),
+		timestamp: String(value.timestamp || value.created_at || '').trim(),
+		feedback: value.feedback === null || value.feedback === undefined
+			? null
+			: String(value.feedback)
+	};
 }
 
 export class Chatbot {
@@ -62,12 +83,9 @@ export class Chatbot {
 		this.pendingInteraction = null;
 		this.activeAssistant = null;
 		this.renderTimer = null;
-		this.conversationStorageKey = [
-			'base3.chatbot.conversation',
-			String(this.options.configGroup || 'default'),
-			String(this.options.configName || 'default')
-		].join('.');
-		this.conversationId = this.loadConversationId();
+		this.conversation = null;
+		this.conversationId = '';
+		this.conversationManaged = false;
 
 		this.elements = this.resolveElements();
 		this.registerBuiltInCommands();
@@ -83,13 +101,14 @@ export class Chatbot {
 		};
 
 		return {
-			basePrompt: query('[data-chatbot-base-prompt]'),
+			openingMessage: query('[data-chatbot-opening-message]'),
 			main: query('[data-chatbot-main]'),
 			messages: query('[data-chatbot-messages]'),
 			suggestions: query('[data-chatbot-suggestions]'),
 			composer: query('[data-chatbot-composer]'),
 			input: query('[data-chatbot-input]'),
 			sendButton: query('[data-chatbot-send]'),
+			status: query('[data-chatbot-status]', false),
 			canvas: query('[data-chatbot-canvas]', false),
 			canvasTitle: query('[data-chatbot-canvas-title]', false),
 			canvasContent: query('[data-chatbot-canvas-content]', false),
@@ -100,7 +119,6 @@ export class Chatbot {
 	registerBuiltInCommands() {
 		this.commands
 			.register('send', ({ chatbot }, payload) => chatbot.send(payload || {}))
-			.register('newConversation', ({ chatbot }) => chatbot.startNewConversation())
 			.register('setComposerValue', ({ chatbot }, payload) => chatbot.setComposerValue(payload ?? ''))
 			.register('focusComposer', ({ chatbot }) => chatbot.focusComposer());
 	}
@@ -111,12 +129,14 @@ export class Chatbot {
 		}
 
 		this.registerUiSlots();
-		this.pluginManager.installAll(this.options.plugins);
+		await this.pluginManager.installAll(this.options.plugins);
 		this.bindDomEvents();
 		this.initialized = true;
 		this.root.dataset.chatbotState = 'ready';
 
-		await this.loadBasePrompt();
+		if (!this.conversationManaged) {
+			await this.loadOpeningMessage();
+		}
 		this.events.emit('chatbot:ready', {
 			chatbot: this,
 			conversationId: this.conversationId
@@ -157,8 +177,8 @@ export class Chatbot {
 		input.style.height = `${Math.max(50, Math.min(input.scrollHeight, 150))}px`;
 	}
 
-	async loadBasePrompt() {
-		if (!this.options.serviceUrl || !this.elements.basePrompt) {
+	async loadOpeningMessage() {
+		if (!this.options.serviceUrl || !this.elements.openingMessage) {
 			return;
 		}
 
@@ -179,10 +199,7 @@ export class Chatbot {
 				return;
 			}
 
-			this.elements.basePrompt.innerHTML = await response.text();
-			this.events.emit('baseprompt:loaded', {
-				element: this.elements.basePrompt
-			});
+			this.setOpeningMessage(await response.text());
 		} catch (error) {
 			if (error?.name !== 'AbortError') {
 				this.events.emit('chatbot:error', error);
@@ -194,43 +211,119 @@ export class Chatbot {
 		return this.conversationId;
 	}
 
-	loadConversationId() {
-		try {
-			const stored = String(window.localStorage.getItem(this.conversationStorageKey) || '').trim();
-			if (stored) {
-				return stored;
-			}
-		} catch (error) {
+	setConversation(conversation) {
+		if (!conversation || typeof conversation !== 'object' || Array.isArray(conversation)) {
+			throw new Error('Conversation metadata is required.');
+		}
+		const id = String(conversation.id || '').trim();
+		if (!id) {
+			throw new Error('Conversation metadata requires an id.');
 		}
 
-		const id = createId('conversation');
-		this.persistConversationId(id);
-		return id;
-	}
-
-	persistConversationId(id) {
-		try {
-			window.localStorage.setItem(this.conversationStorageKey, id);
-		} catch (error) {
+		const changed = this.conversationId !== id;
+		this.conversation = { ...conversation, id };
+		this.conversationId = id;
+		if (changed) {
+			this.pendingInteraction = null;
+			this.activeAssistant = null;
 		}
+		this.events.emit(changed ? 'conversation:changed' : 'conversation:updated', {
+			conversation: this.conversation,
+			conversationId: this.conversationId
+		});
+		return this;
 	}
 
-	startNewConversation() {
+
+	clearConversation() {
+		const changed = this.conversationId !== '';
+		this.conversation = null;
+		this.conversationId = '';
+		this.pendingInteraction = null;
+		this.activeAssistant = null;
+		if (changed) {
+			this.events.emit('conversation:changed', {
+				conversation: null,
+				conversationId: ''
+			});
+		}
+		return this;
+	}
+
+	setOpeningMessage(message) {
+		const text = String(message || '').trim();
+		this.elements.openingMessage.textContent = text;
+		this.elements.openingMessage.hidden = text === '' || this.elements.messages.children.length > 0;
+		this.events.emit('opening-message:loaded', {
+			element: this.elements.openingMessage,
+			message: text
+		});
+		return this;
+	}
+
+	replaceMessages(messages) {
 		this.closeTransport();
-		this.conversationId = createId('conversation');
-		this.persistConversationId(this.conversationId);
 		this.pendingInteraction = null;
 		this.activeAssistant = null;
 		this.elements.messages.replaceChildren();
-		this.elements.messages.classList.add('is-empty');
 		this.elements.suggestions.replaceChildren();
-		this.elements.basePrompt.hidden = false;
-		this.root.classList.remove('is-started');
-		this.events.emit('conversation:changed', {
-			conversationId: this.conversationId
+		this.elements.suggestions.classList.remove('has-suggestions', 'is-loading');
+
+		const normalized = Array.isArray(messages)
+			? messages.map(normalizeMessage).filter(Boolean)
+			: [];
+		normalized.forEach((message) => this.renderHydratedMessage(message));
+
+		const hasMessages = normalized.length > 0;
+		this.elements.messages.classList.toggle('is-empty', !hasMessages);
+		this.root.classList.toggle('is-started', hasMessages);
+		this.elements.openingMessage.hidden = hasMessages || this.elements.openingMessage.textContent.trim() === '';
+		this.events.emit('conversation:messages-replaced', {
+			conversationId: this.conversationId,
+			messages: normalized
 		});
-		this.focusComposer();
-		return this.conversationId;
+		this.scrollToBottom();
+		return this;
+	}
+
+	renderHydratedMessage(message) {
+		if (message.role === 'user') {
+			const element = this.appendUserMessage(message.content, message);
+			this.events.emit('message:hydrated', {
+				id: message.id,
+				element,
+				content: element.querySelector('.base3-chatbot-message-content'),
+				actions: null,
+				rawText: message.content,
+				role: message.role,
+				feedback: message.feedback,
+				completed: true,
+				error: false,
+				interaction: false
+			});
+			return element;
+		}
+
+		const assistant = this.createAssistantMessage();
+		assistant.id = message.id || createId('message');
+		assistant.element.dataset.messageId = assistant.id;
+		if (message.timestamp) {
+			assistant.element.dataset.messageTimestamp = message.timestamp;
+		}
+		if (message.feedback) {
+			assistant.element.dataset.feedback = message.feedback;
+		}
+		assistant.rawText = message.content;
+		assistant.completed = true;
+		this.hideThinking(assistant);
+		this.renderAssistant(assistant);
+		this.events.emit('message:hydrated', {
+			...assistant,
+			role: message.role,
+			feedback: message.feedback,
+			interaction: false
+		});
+		return assistant.element;
 	}
 
 	setComposerValue(value) {
@@ -241,6 +334,19 @@ export class Chatbot {
 
 	focusComposer() {
 		this.elements.input.focus();
+		return this;
+	}
+
+	announce(message) {
+		if (!this.elements.status) {
+			return this;
+		}
+		this.elements.status.textContent = '';
+		window.setTimeout(() => {
+			if (this.elements.status) {
+				this.elements.status.textContent = String(message || '');
+			}
+		}, 20);
 		return this;
 	}
 
@@ -259,6 +365,10 @@ export class Chatbot {
 
 	getActiveAssistant() {
 		return this.activeAssistant;
+	}
+
+	isSending() {
+		return this.sending;
 	}
 
 	async send(options = {}) {
@@ -281,30 +391,15 @@ export class Chatbot {
 			this.pendingInteraction = null;
 		}
 
-		this.events.emit('message:starting', { text });
-		this.elements.suggestions.replaceChildren();
-		this.elements.suggestions.classList.remove('has-suggestions', 'is-loading');
-		this.elements.basePrompt.hidden = true;
-		this.elements.messages.classList.remove('is-empty');
-		this.root.classList.add('is-started');
-
-		if (options.displayUserMessage !== false) {
-			this.appendUserMessage(raw);
-		}
-		this.setComposerValue('');
-		this.scrollToBottom();
-
-		const assistant = this.createAssistantMessage();
-		this.activeAssistant = assistant;
-		this.setSending(true);
-
 		let payload = {
 			prompt: text,
 			transport_mode: this.resolveTransportMode(),
 			config_group: String(this.options.configGroup || ''),
-			config_name: String(this.options.configName || ''),
-			conversation_id: this.conversationId
+			config_name: String(this.options.configName || '')
 		};
+		if (this.conversationId) {
+			payload.conversation_id = this.conversationId;
+		}
 		if (resumeContext) {
 			payload.resume_handle = resumeContext.resume_handle;
 			payload.resume_response = text;
@@ -320,7 +415,38 @@ export class Chatbot {
 				);
 			}
 		}
-		payload = this.pluginManager.transformRequest(payload);
+
+		this.setSending(true);
+		try {
+			payload = await this.pluginManager.prepareRequest(payload);
+			payload = this.pluginManager.transformRequest(payload);
+		} catch (error) {
+			this.setSending(false);
+			if (error?.name !== 'AbortError') {
+				this.events.emit('chatbot:error', error);
+				this.announce(error?.message || this.options.strings.requestError);
+			}
+			return;
+		}
+
+		this.events.emit('message:starting', {
+			text,
+			conversationId: this.conversationId
+		});
+		this.elements.suggestions.replaceChildren();
+		this.elements.suggestions.classList.remove('has-suggestions', 'is-loading');
+		this.elements.openingMessage.hidden = true;
+		this.elements.messages.classList.remove('is-empty');
+		this.root.classList.add('is-started');
+
+		if (options.displayUserMessage !== false) {
+			this.appendUserMessage(raw);
+		}
+		this.setComposerValue('');
+		this.scrollToBottom();
+
+		const assistant = this.createAssistantMessage();
+		this.activeAssistant = assistant;
 
 		try {
 			this.transport = this.createTransport();
@@ -484,7 +610,8 @@ export class Chatbot {
 		this.setSending(false);
 		this.events.emit('message:completed', {
 			...assistant,
-			interaction: options.interaction === true
+			interaction: options.interaction === true,
+			conversationId: this.conversationId
 		});
 		this.scrollToBottom();
 	}
@@ -523,15 +650,24 @@ export class Chatbot {
 		this.setSending(false);
 		this.events.emit('message:error', {
 			...assistant,
-			payload
+			payload,
+			conversationId: this.conversationId
 		});
 		this.scrollToBottom();
 	}
 
-	appendUserMessage(text) {
+	appendUserMessage(text, metadata = {}) {
 		const message = createElement('div', {
 			className: 'base3-chatbot-message base3-chatbot-message-user'
 		});
+		const id = String(metadata.id || '').trim();
+		const timestamp = String(metadata.timestamp || '').trim();
+		if (id) {
+			message.dataset.messageId = id;
+		}
+		if (timestamp) {
+			message.dataset.messageTimestamp = timestamp;
+		}
 		message.appendChild(createElement('div', {
 			className: 'base3-chatbot-message-content',
 			text
@@ -646,6 +782,10 @@ export class Chatbot {
 		this.elements.sendButton.disabled = this.sending;
 		this.elements.input.disabled = this.sending;
 		this.root.dataset.chatbotState = this.sending ? 'sending' : 'ready';
+		this.events.emit('chatbot:sending-changed', {
+			sending: this.sending,
+			conversationId: this.conversationId
+		});
 		if (!this.sending) {
 			this.focusComposer();
 		}
@@ -663,10 +803,6 @@ export class Chatbot {
 	}
 
 	destroy() {
-		if (!this.initialized) {
-			return;
-		}
-
 		this.closeTransport();
 		if (this.renderTimer) {
 			window.clearTimeout(this.renderTimer);

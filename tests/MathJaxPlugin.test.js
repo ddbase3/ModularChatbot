@@ -104,7 +104,7 @@ test('mathjax plugin clears typeset content before a message is rendered again',
 	MathJaxPlugin.destroy(context);
 });
 
-test('mathjax plugin typesets mathematical base prompts', async () => {
+test('mathjax plugin typesets mathematical opening messages', async () => {
 	const mathJax = createMathJax();
 	const context = createContext(mathJax);
 	const element = {
@@ -113,7 +113,7 @@ test('mathjax plugin typesets mathematical base prompts', async () => {
 	};
 
 	MathJaxPlugin.install(context);
-	context.events.emit('baseprompt:loaded', { element });
+	context.events.emit('opening-message:loaded', { element });
 	await flushPromises();
 
 	assert.deepEqual(mathJax.calls, [
