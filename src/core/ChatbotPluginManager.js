@@ -125,17 +125,33 @@ export class ChatbotPluginManager {
 	}
 
 	renderMessageContent(renderContext) {
+		const contextData = { ...renderContext };
+
+		for (const { plugin, context } of this.plugins) {
+			if (typeof plugin.prepareMessageContent === 'function') {
+				plugin.prepareMessageContent(context, contextData);
+			}
+		}
+
+		let handled = false;
 		for (const { plugin, context } of this.plugins) {
 			if (typeof plugin.renderMessageContent !== 'function') {
 				continue;
 			}
 
-			if (plugin.renderMessageContent(context, renderContext) === true) {
-				return true;
+			if (plugin.renderMessageContent(context, contextData) === true) {
+				handled = true;
+				break;
 			}
 		}
 
-		return false;
+		for (const { plugin, context } of this.plugins) {
+			if (typeof plugin.finalizeMessageContent === 'function') {
+				plugin.finalizeMessageContent(context, contextData, handled);
+			}
+		}
+
+		return handled;
 	}
 
 	handleTransportEvent(eventName, payload, eventContext) {

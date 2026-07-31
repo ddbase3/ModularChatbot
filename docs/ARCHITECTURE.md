@@ -24,12 +24,14 @@ Plugins are objects with a unique `name`. Optional capabilities include:
 - `commands`
 - `transportEvents`
 - `transformRequest(context, payload)`
+- `prepareMessageContent(context, renderContext)`
 - `renderMessageContent(context, renderContext)`
+- `finalizeMessageContent(context, renderContext, handled)`
 - `onTransportEvent(context, eventName, payload, eventContext)`
 
 Plugins must use the provided context and instance-local UI slots. They must not search the complete document for chatbot controls.
 
-Content renderers such as `MarkdownPlugin` implement `renderMessageContent()`. Post-render decorators such as `MathJaxPlugin` react to message lifecycle events instead of competing for the content-renderer slot. The relevant lifecycle is:
+Content renderers such as `MarkdownPlugin` implement `renderMessageContent()`. Host extensions may use the neutral preparation and finalization hooks around the selected renderer, and expensive decorators react to message lifecycle events instead of competing for the content-renderer slot. The relevant lifecycle is:
 
 ```text
 message:rendering
@@ -38,9 +40,9 @@ message:rendering
   -> message:completed
 ```
 
-`message:rendering` allows decorators to release state tied to the current DOM before the core replaces the message content. `MathJaxPlugin` typesets only after `message:completed`, so REST and SSE use the same stable final DOM and incomplete TeX from a running stream is not processed.
+`message:rendering` allows decorators to release state tied to the current DOM before the core replaces the message content. Expensive decorators should process only `message:completed` and `message:hydrated`, so REST, SSE and restored history use the same stable final DOM.
 
-When MathJax is enabled with Markdown, `MarkdownPlugin` protects complete `\(...\)` and `\[...\]` expressions before Marked parses the message and restores them in the generated HTML. This keeps standard MathJax delimiters intact without requiring model-specific doubled backslashes.
+The host may dynamically import additional plugin objects and pass their options through the existing `pluginOptions` map. Capability-specific parsing and connector logic remains in those external plugins.
 
 ## UI slots
 

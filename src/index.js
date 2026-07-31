@@ -1,4 +1,4 @@
-import { Chatbot } from './Chatbot.js?build=conversation-draft-1';
+import { Chatbot } from './Chatbot.js?build=response-extensions-1';
 
 const mountedChatbots = new WeakMap();
 
@@ -34,10 +34,10 @@ export function unmountChatbot(root) {
 	mountedChatbots.delete(root);
 }
 
-export { Chatbot } from './Chatbot.js?build=conversation-draft-1';
+export { Chatbot } from './Chatbot.js?build=response-extensions-1';
 export { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=conversation-draft-1';
 export { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
-export { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=conversation-draft-1';
+export { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=response-extensions-1';
 export { ChatbotUiRegistry } from './core/ChatbotUiRegistry.js?build=conversation-draft-1';
 export { RestChatTransport } from './transport/RestChatTransport.js?build=conversation-draft-1';
 export { SseChatTransport } from './transport/SseChatTransport.js?build=conversation-draft-1';
@@ -47,8 +47,7 @@ export { AgentActivityPlugin } from './plugins/AgentActivityPlugin.js?build=conv
 export { AgentInteractionPlugin } from './plugins/AgentInteractionPlugin.js?build=conversation-draft-1';
 export { CanvasPlugin } from './plugins/CanvasPlugin.js?build=conversation-draft-1';
 export { ConversationPlugin } from './plugins/ConversationPlugin.js?build=conversation-title-contract-1';
-export { MarkdownPlugin } from './plugins/MarkdownPlugin.js?build=conversation-draft-1';
-export { MathJaxPlugin } from './plugins/MathJaxPlugin.js?build=conversation-draft-1';
+export { MarkdownPlugin } from './plugins/MarkdownPlugin.js?build=markdown-fragments-1';
 export { MessageActionsPlugin } from './plugins/MessageActionsPlugin.js?build=conversation-draft-1';
 export { ReferencePlugin } from './plugins/ReferencePlugin.js?build=conversation-draft-1';
 export { SuggestionsPlugin } from './plugins/SuggestionsPlugin.js?build=conversation-draft-1';

@@ -1,44 +1,61 @@
 import { loadScript } from '../utils/loadScript.js?build=conversation-draft-1';
 import { patchExternalLinks } from '../utils/dom.js?build=conversation-draft-1';
 
-const MATHJAX_EXPRESSION_PATTERN = /\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)/g;
+const EXTENSION_LANGUAGE_PREFIX = 'language-base3-';
 
-function escapeHtml(value) {
-	return String(value)
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;');
+function getMarked(context) {
+	const marked = context.resolveGlobal('marked');
+	if (!marked || typeof marked.parse !== 'function') {
+		throw new Error('Markdown renderer is not available.');
+	}
+	return marked;
 }
 
-function protectMathJaxExpressions(value) {
-	const source = String(value || '');
-	const expressions = [];
-	let prefix = 'BASE3MATHJAXEXPRESSION';
-	while (source.includes(prefix)) {
-		prefix += 'X';
+function getDocument(context, payload) {
+	const document = payload?.document || context.root?.ownerDocument || globalThis.document;
+	if (!document || typeof document.createElement !== 'function' || typeof document.createDocumentFragment !== 'function') {
+		throw new Error('Markdown fragment rendering requires a document.');
+	}
+	return document;
+}
+
+function neutralizeExtensionBlocks(container) {
+	container.querySelectorAll('pre > code').forEach((code) => {
+		const extensionClasses = [...code.classList].filter((className) => className.startsWith(EXTENSION_LANGUAGE_PREFIX));
+		if (extensionClasses.length === 0) {
+			return;
+		}
+
+		extensionClasses.forEach((className) => code.classList.remove(className));
+		code.classList.add('language-text');
+	});
+}
+
+function renderMarkdownFragment(context, payload = {}) {
+	const markdown = String(payload.markdown || '');
+	const marked = getMarked(context);
+	const document = getDocument(context, payload);
+	const container = document.createElement('div');
+	container.innerHTML = marked.parse(markdown);
+
+	if (payload.allowExtensionBlocks !== true) {
+		neutralizeExtensionBlocks(container);
 	}
 
-	const text = source.replace(MATHJAX_EXPRESSION_PATTERN, (expression) => {
-		const token = `${prefix}${expressions.length}END`;
-		expressions.push({ token, expression });
-		return token;
-	});
-
-	return {
-		text,
-		restore(html) {
-			return expressions.reduce(
-				(output, item) => output.split(item.token).join(escapeHtml(item.expression)),
-				String(html || '')
-			);
-		}
-	};
+	patchExternalLinks(container);
+	const fragment = document.createDocumentFragment();
+	while (container.firstChild) {
+		fragment.appendChild(container.firstChild);
+	}
+	return fragment;
 }
 
 export const MarkdownPlugin = {
 	name: 'markdown',
+
+	commands: {
+		'markdown:render-fragment': renderMarkdownFragment
+	},
 
 	install(context) {
 		const options = context.getPluginOptions();
@@ -59,15 +76,7 @@ export const MarkdownPlugin = {
 			return false;
 		}
 
-		const options = context.getPluginOptions();
-		if (options.preserveMathJax === true) {
-			const protectedContent = protectMathJaxExpressions(renderContext.text);
-			renderContext.element.innerHTML = protectedContent.restore(marked.parse(protectedContent.text));
-		}
-		else {
-			renderContext.element.innerHTML = marked.parse(renderContext.text);
-		}
-
+		renderContext.element.innerHTML = marked.parse(renderContext.text);
 		patchExternalLinks(renderContext.element);
 		return true;
 	}

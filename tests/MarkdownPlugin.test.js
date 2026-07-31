@@ -16,16 +16,101 @@ class FakeElement {
 	}
 }
 
-function render(text, preserveMathJax = true) {
+class FakeClassList {
+	constructor(values = []) {
+		this.values = new Set(values);
+	}
+
+	add(value) {
+		this.values.add(value);
+	}
+
+	remove(value) {
+		this.values.delete(value);
+	}
+
+	contains(value) {
+		return this.values.has(value);
+	}
+
+	[Symbol.iterator]() {
+		return this.values[Symbol.iterator]();
+	}
+}
+
+class FakeFragmentNode {
+	constructor(tagName = 'div') {
+		this.tagName = tagName.toUpperCase();
+		this.children = [];
+		this.parentElement = null;
+		this.classList = new FakeClassList();
+		this._innerHTML = '';
+	}
+
+	set innerHTML(value) {
+		this._innerHTML = String(value);
+		this.children = [];
+		if (this._innerHTML.includes('language-base3-callout')) {
+			const pre = new FakeFragmentNode('pre');
+			const code = new FakeFragmentNode('code');
+			code.classList.add('language-base3-callout');
+			pre.appendChild(code);
+			this.appendChild(pre);
+		}
+		this.appendChild(new FakeFragmentNode('p'));
+	}
+
+	get innerHTML() {
+		return this._innerHTML;
+	}
+
+	get firstChild() {
+		return this.children[0] || null;
+	}
+
+	appendChild(child) {
+		if (child.parentElement) {
+			child.parentElement.children = child.parentElement.children.filter((candidate) => candidate !== child);
+		}
+		this.children.push(child);
+		child.parentElement = this;
+		return child;
+	}
+
+	querySelectorAll(selector) {
+		if (selector === 'a[href]') {
+			return [];
+		}
+		if (selector !== 'pre > code') {
+			return [];
+		}
+
+		return this.children.flatMap((child) => {
+			if (child.tagName === 'PRE') {
+				return child.children.filter((candidate) => candidate.tagName === 'CODE');
+			}
+			return [];
+		});
+	}
+}
+
+class FakeDocument {
+	createElement(tagName) {
+		return new FakeFragmentNode(tagName);
+	}
+
+	createDocumentFragment() {
+		return new FakeFragmentNode('#document-fragment');
+	}
+}
+
+function render(text) {
 	const previousElement = globalThis.Element;
 	const element = new FakeElement();
 	globalThis.Element = FakeElement;
 
 	try {
 		const handled = MarkdownPlugin.renderMessageContent({
-			getPluginOptions() {
-				return { preserveMathJax };
-			},
 			resolveGlobal(path) {
 				return path === 'marked' ? marked : null;
 			}
@@ -36,61 +121,28 @@ function render(text, preserveMathJax = true) {
 
 		assert.equal(handled, true);
 		return element.innerHTML;
-	} finally {
+	}
+	finally {
 		globalThis.Element = previousElement;
 	}
 }
 
-test('markdown plugin preserves standard inline MathJax delimiters', () => {
-	const html = render(String.raw`A) The scalar product is \(\mathbf{a} \cdot \mathbf{b} = 1\).`);
+test('markdown plugin renders ordinary markdown without extension-specific branches', () => {
+	const html = render('## Result\n\n- First\n- Second');
 
-	assert.match(html, /\\\(\\mathbf\{a\} \\cdot \\mathbf\{b\} = 1\\\)/);
-});
-
-test('markdown plugin preserves display matrices as one MathJax expression', () => {
-	const html = render(String.raw`The matrix is:
-
-\[
-A =
-\begin{bmatrix}
-1 & 2 & 3 \\
-0 & 1 & 4 \\
-5 & 6 & 0
-\end{bmatrix}
-\]`);
-
-	assert.match(html, /\\\[/);
-	assert.match(html, /\\begin\{bmatrix\}/);
-	assert.match(html, /1 &amp; 2 &amp; 3 \\\\/);
-	assert.match(html, /0 &amp; 1 &amp; 4 \\\\/);
-	assert.match(html, /\\end\{bmatrix\}/);
-	assert.match(html, /\\\]/);
-});
-
-test('markdown plugin preserves formulas inside Markdown table cells', () => {
-	const html = render(String.raw`| Method | Accuracy |
-| --- | --- |
-| Archimedes | \(\mathcal{O}(1/n)\) |`);
-
-	assert.match(html, /<table>/);
-	assert.match(html, /\\\(\\mathcal\{O\}\(1\/n\)\\\)/);
-});
-
-test('markdown plugin uses normal Markdown escaping when MathJax preservation is disabled', () => {
-	const html = render(String.raw`The value is \(x^2\).`, false);
-
-	assert.match(html, /The value is \(x\^2\)\./);
-	assert.doesNotMatch(html, /\\\(x\^2\\\)/);
+	assert.match(html, /<h2>Result<\/h2>/);
+	assert.match(html, /<li>First<\/li>/);
+	assert.match(html, /<li>Second<\/li>/);
 });
 
 test('markdown plugin handles opening-message link markup', () => {
 	const originalElement = globalThis.Element;
-	class FakeElement {
+	class OpeningMessageElement {
 		querySelectorAll() {
 			return [];
 		}
 	}
-	globalThis.Element = FakeElement;
+	globalThis.Element = OpeningMessageElement;
 	const listeners = new Map();
 	const context = {
 		getPluginOptions: () => ({}),
@@ -106,8 +158,39 @@ test('markdown plugin handles opening-message link markup', () => {
 		MarkdownPlugin.install(context);
 		assert.equal(listeners.has('opening-message:loaded'), true);
 		assert.equal(listeners.has('baseprompt:loaded'), false);
-		listeners.get('opening-message:loaded')({ element: new FakeElement() });
-	} finally {
+		listeners.get('opening-message:loaded')({ element: new OpeningMessageElement() });
+	}
+	finally {
 		globalThis.Element = originalElement;
+	}
+});
+
+test('markdown fragment command returns a fragment and neutralizes nested extension blocks', () => {
+	const previousElement = globalThis.Element;
+	globalThis.Element = FakeFragmentNode;
+	const document = new FakeDocument();
+	const context = {
+		root: { ownerDocument: document },
+		resolveGlobal(path) {
+			return path === 'marked'
+				? { parse: () => '<pre><code class="language-base3-callout">payload</code></pre><p>Text</p>' }
+				: null;
+		}
+	};
+
+	try {
+		const fragment = MarkdownPlugin.commands['markdown:render-fragment'](context, {
+			markdown: '**Text**',
+			document,
+			allowExtensionBlocks: false
+		});
+		const code = fragment.querySelectorAll('pre > code')[0];
+
+		assert.equal(fragment.children.length, 2);
+		assert.equal(code.classList.contains('language-base3-callout'), false);
+		assert.equal(code.classList.contains('language-text'), true);
+	}
+	finally {
+		globalThis.Element = previousElement;
 	}
 });

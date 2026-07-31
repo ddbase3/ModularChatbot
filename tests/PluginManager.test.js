@@ -130,3 +130,33 @@ test('plugin manager awaits request preparation in installation order', async ()
 		second: true
 	});
 });
+
+test('plugin manager runs generic content hooks around the selected renderer', async () => {
+	const manager = new ChatbotPluginManager(createChatbot());
+	const order = [];
+	const element = { innerHTML: '' };
+
+	await manager.install({
+		name: 'preparer',
+		prepareMessageContent(context, renderContext) {
+			order.push('prepare');
+			renderContext.text = `[${renderContext.text}]`;
+		},
+		finalizeMessageContent(context, renderContext, handled) {
+			order.push(`finalize:${handled}`);
+			renderContext.element.innerHTML += '!';
+		}
+	});
+	await manager.install({
+		name: 'renderer',
+		renderMessageContent(context, renderContext) {
+			order.push('render');
+			renderContext.element.innerHTML = renderContext.text;
+			return true;
+		}
+	});
+
+	assert.equal(manager.renderMessageContent({ element, text: 'value' }), true);
+	assert.deepEqual(order, ['prepare', 'render', 'finalize:true']);
+	assert.equal(element.innerHTML, '[value]!');
+});

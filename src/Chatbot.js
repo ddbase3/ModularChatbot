@@ -1,6 +1,6 @@
 import { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=conversation-draft-1';
 import { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
-import { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=conversation-draft-1';
+import { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=response-extensions-1';
 import { ChatbotUiRegistry } from './core/ChatbotUiRegistry.js?build=conversation-draft-1';
 import { RestChatTransport } from './transport/RestChatTransport.js?build=conversation-draft-1';
 import { SseChatTransport } from './transport/SseChatTransport.js?build=conversation-draft-1';

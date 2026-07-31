@@ -2,7 +2,7 @@
 
 ModularChatbot is the native ES module chatbot client for BASE3.
 
-The project is intentionally independent from the preserved ClassicChatbot client. It provides:
+The project is the active native ES module chatbot client. It provides:
 
 - no jQuery dependency
 - multiple independent chatbot instances per page
@@ -11,7 +11,8 @@ The project is intentionally independent from the preserved ClassicChatbot clien
 - a plugin manager with explicit plugin options
 - instance-local UI slots
 - accessible native controls
-- Markdown, MathJax, suggestions, feedback, reference, activity, interaction, canvas, conversation and browser voice plugins
+- Markdown, suggestions, feedback, reference, activity, interaction, canvas, conversation and browser voice plugins
+- host-loaded response extensions supplied by optional plugins
 - server-backed conversation lists with activation, creation, renaming and deletion
 - hydration of stored messages through the same render path as live messages
 - browser voice dialog mode with automatic listen, send, speak and listen switching
@@ -73,47 +74,24 @@ It does not:
 - keep an independent browser history
 - render stored messages through a separate HTML path
 
-The server-side conversation memory remains the source of truth. The plugin receives structured messages and asks the chatbot core to hydrate them through the normal render pipeline. Markdown, MathJax, message actions and feedback therefore behave the same for stored and newly generated assistant messages.
+The server-side conversation memory remains the source of truth. The plugin receives structured messages and asks the chatbot core to hydrate them through the normal render pipeline. Markdown, message actions, feedback and host-loaded post-render extensions therefore behave the same for stored and newly generated assistant messages.
 
 Install `ConversationPlugin` after content-rendering and message-action plugins so the initial hydration can use their registered handlers.
 
 When multiple conversations are disabled, the plugin still manages the one server-side active conversation but does not render list controls.
 
-## MathJax
+## Post-render extensions
 
-`MathJaxPlugin` typesets completed and hydrated assistant messages as well as the prominent main heading after the normal content renderer has finished. It uses the self-hosted MathJax 4 component supplied through `pluginOptions.mathjax.scriptUrl` and loads it lazily only when mathematical delimiters or MathML are present.
+The modular client keeps Markdown as its synchronous content renderer during streaming. More expensive decorators are loaded by the host as normal Chatbot plugins and react to the stable message lifecycle after rendering.
 
-```javascript
-import {
-	mountChatbot,
-	MarkdownPlugin,
-	MathJaxPlugin
-} from './index.js';
+Optional plugins own their browser modules, content preparation, finalization and post-render processing. The modular client provides only the neutral lifecycle and does not contain capability-specific connector code. Incomplete streaming output is not handed to expensive post-render decorators.
 
-await mountChatbot(root, {
-	serviceUrl: '/chatbot',
-	plugins: [MarkdownPlugin, MathJaxPlugin],
-	pluginOptions: {
-		markdown: {
-			preserveMathJax: true
-		},
-		mathjax: {
-			scriptUrl: '/assets/mathjax/tex-mml-chtml.js'
-		}
-	}
-});
-```
-
-The canonical delimiters are `\(...\)` for inline mathematics and `\[...\]` for display mathematics. When Markdown and MathJax are enabled together, set `pluginOptions.markdown.preserveMathJax` to `true`. `MarkdownPlugin` then protects complete MathJax expressions before calling Marked and restores them afterwards, so models can emit ordinary MathJax TeX without doubled delimiter backslashes.
-
-MathJax processing starts only after the message is complete. REST, SSE and hydrated history therefore share exactly the same final typesetting path, and an incomplete streaming expression is never handed to MathJax.
+External modules must export one plugin object with a unique `name`. They are installed by the existing `ChatbotPluginManager`; ClientStack does not maintain a second extension registry.
 
 ## Current integration status
 
 `ClientStack\\Display\\ModularChatbotDisplay` renders this module under the technical name `modularchatbotdisplay`.
 
-The ClientStack default binding remains `ClassicChatbotDisplay`. Projects can explicitly bind `UiFoundation\\Api\\IChatbotDisplay` to `ModularChatbotDisplay` when they want to activate the modular client.
-
-The modular display supports the server-backed Conversation API supplied by Chatbot. ClassicChatbot remains a non-multi-chat fallback and is not extended by `ConversationPlugin`.
+ClientStack binds `UiFoundation\Api\IChatbotDisplay` to `ModularChatbotDisplay`. The display supports the server-backed Conversation API supplied by Chatbot.
 
 Mistral realtime STT is available when Chatbot supplies a configured short-lived session URL. Browser speech recognition remains available without backend configuration.
