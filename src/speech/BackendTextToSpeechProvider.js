@@ -1,3 +1,5 @@
+import { StreamingWavAudioPlayer } from './StreamingWavAudioPlayer.js?build=tts-stream-2';
+
 function splitText(text, maxLength = 3900) {
 	const value = String(text || '').trim();
 	if (!value) {
@@ -33,12 +35,26 @@ export class BackendTextToSpeechProvider {
 		this.options = {
 			speechUrl: '',
 			maxChunkLength: 3900,
+			responseFormat: 'wav',
 			...options
 		};
 		this.controller = null;
-		this.audio = null;
-		this.objectUrl = '';
+		this.playback = null;
+		this.audioContext = null;
 		this.generation = 0;
+	}
+
+	async activate() {
+		const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
+		if (!AudioContextClass) {
+			throw new Error('Streaming audio playback is not supported by this browser.');
+		}
+		if (!this.audioContext || this.audioContext.state === 'closed') {
+			this.audioContext = new AudioContextClass();
+		}
+		if (this.audioContext.state === 'suspended') {
+			await this.audioContext.resume();
+		}
 	}
 
 	async speak(text, language = '') {
@@ -47,6 +63,7 @@ export class BackendTextToSpeechProvider {
 		}
 
 		this.stop();
+		await this.activate();
 		const generation = ++this.generation;
 		this.controller = new AbortController();
 		const chunks = splitText(text, Number(this.options.maxChunkLength) || 3900);
@@ -55,8 +72,14 @@ export class BackendTextToSpeechProvider {
 			if (generation !== this.generation || this.controller.signal.aborted) {
 				throw createAbortError();
 			}
-			const blob = await this.requestAudio(chunk, language, this.controller.signal);
-			await this.playBlob(blob, generation, this.controller.signal);
+
+			const response = await this.requestAudioStream(chunk, language, this.controller.signal);
+			const playback = new StreamingWavAudioPlayer(response, this.controller.signal, this.audioContext);
+			this.playback = playback;
+			await playback.play();
+			if (this.playback === playback) {
+				this.playback = null;
+			}
 		}
 
 		if (generation === this.generation) {
@@ -68,30 +91,30 @@ export class BackendTextToSpeechProvider {
 		this.generation += 1;
 		this.controller?.abort();
 		this.controller = null;
-		if (this.audio) {
-			this.audio.pause();
-			this.audio.removeAttribute('src');
-			this.audio.load();
-			this.audio = null;
-		}
-		this.releaseObjectUrl();
+		this.playback?.stop();
+		this.playback = null;
 	}
 
 	destroy() {
 		this.stop();
+		this.audioContext?.close();
+		this.audioContext = null;
 	}
 
-	async requestAudio(text, language, signal) {
+	async requestAudioStream(text, language, signal) {
 		const response = await fetch(this.options.speechUrl, {
 			method: 'POST',
 			credentials: 'same-origin',
 			headers: {
-				Accept: 'audio/*, application/json',
+				Accept: 'audio/wav, application/json',
 				'Content-Type': 'application/json'
 			},
 			body: JSON.stringify({
 				text,
-				language
+				language,
+				options: {
+					responseFormat: this.options.responseFormat
+				}
 			}),
 			signal
 		});
@@ -107,66 +130,7 @@ export class BackendTextToSpeechProvider {
 			throw new Error(message);
 		}
 
-		const blob = await response.blob();
-		if (!blob.size) {
-			throw new Error('Text-to-speech response is empty.');
-		}
-		if (String(blob.type || contentType).includes('audio/pcm')) {
-			throw new Error('Raw PCM text-to-speech output cannot be played by the browser client.');
-		}
-
-		return blob;
-	}
-
-	playBlob(blob, generation, signal) {
-		return new Promise((resolve, reject) => {
-			if (generation !== this.generation || signal.aborted) {
-				reject(createAbortError());
-				return;
-			}
-
-			this.releaseObjectUrl();
-			this.objectUrl = URL.createObjectURL(blob);
-			const audio = new Audio(this.objectUrl);
-			this.audio = audio;
-
-			const cleanup = () => {
-				audio.onended = null;
-				audio.onerror = null;
-				signal.removeEventListener('abort', onAbort);
-				if (this.audio === audio) {
-					this.audio = null;
-				}
-				this.releaseObjectUrl();
-			};
-			const onAbort = () => {
-				audio.pause();
-				cleanup();
-				reject(createAbortError());
-			};
-
-			audio.onended = () => {
-				cleanup();
-				resolve();
-			};
-			audio.onerror = () => {
-				cleanup();
-				reject(new Error('Text-to-speech audio could not be played.'));
-			};
-			signal.addEventListener('abort', onAbort, { once: true });
-			audio.play().catch((error) => {
-				cleanup();
-				reject(error);
-			});
-		});
-	}
-
-	releaseObjectUrl() {
-		if (!this.objectUrl) {
-			return;
-		}
-		URL.revokeObjectURL(this.objectUrl);
-		this.objectUrl = '';
+		return response;
 	}
 }
 

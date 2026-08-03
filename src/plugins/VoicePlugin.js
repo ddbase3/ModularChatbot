@@ -1,4 +1,4 @@
-import { BackendTextToSpeechProvider } from '../speech/BackendTextToSpeechProvider.js';
+import { BackendTextToSpeechProvider } from '../speech/BackendTextToSpeechProvider.js?build=tts-stream-2';
 import { BackendRealtimeSpeechToTextProvider } from '../speech/BackendRealtimeSpeechToTextProvider.js';
 
 function cleanText(value) {
@@ -161,6 +161,7 @@ function speakBackend(context, options, state, text, token, onEnd) {
 			}
 			state.speaking = false;
 			setPressed(state.speakerButton, state.speechEnabled);
+			console.error('Text-to-speech failed.', error);
 			context.events.emit('chatbot:error', error);
 			if (state.dialogEnabled) {
 				endDialogMode(context, state);
@@ -409,6 +410,11 @@ function toggleDialogMode(context, options, state) {
 	setDisabled(state.speakerButton, true);
 	disposeRecognition(state);
 	cancelSpeech(state);
+	state.backendTtsProvider?.activate().catch((error) => {
+		console.error('Text-to-speech activation failed.', error);
+		context.events.emit('chatbot:error', error);
+		endDialogMode(context, state);
+	});
 	context.events.emit('voice:dialog-started', {
 		chatbot: context.chatbot
 	});
@@ -476,7 +482,14 @@ export const VoicePlugin = {
 					setPressed(state.speakerButton, state.speechEnabled);
 					if (!state.speechEnabled) {
 						cancelSpeech(state);
+						return;
 					}
+					state.backendTtsProvider?.activate().catch((error) => {
+						state.speechEnabled = false;
+						setPressed(state.speakerButton, false);
+						console.error('Text-to-speech activation failed.', error);
+						context.events.emit('chatbot:error', error);
+					});
 				}
 			});
 		}
