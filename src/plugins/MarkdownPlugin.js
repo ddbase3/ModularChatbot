@@ -19,6 +19,17 @@ function getDocument(context, payload) {
 	return document;
 }
 
+function formatJsonCodeBlocks(container) {
+	container.querySelectorAll('pre > code.language-json').forEach((code) => {
+		try {
+			code.textContent = JSON.stringify(JSON.parse(code.textContent), null, 2);
+		}
+		catch (error) {
+			// Keep invalid or incomplete JSON unchanged.
+		}
+	});
+}
+
 function neutralizeExtensionBlocks(container) {
 	container.querySelectorAll('pre > code').forEach((code) => {
 		const extensionClasses = [...code.classList].filter((className) => className.startsWith(EXTENSION_LANGUAGE_PREFIX));
@@ -42,6 +53,7 @@ function renderMarkdownFragment(context, payload = {}) {
 		neutralizeExtensionBlocks(container);
 	}
 
+	formatJsonCodeBlocks(container);
 	patchExternalLinks(container);
 	const fragment = document.createDocumentFragment();
 	while (container.firstChild) {
@@ -66,6 +78,7 @@ export const MarkdownPlugin = {
 		}
 
 		context.events.on('opening-message:loaded', ({ element }) => {
+			formatJsonCodeBlocks(element);
 			patchExternalLinks(element);
 		});
 	},
@@ -77,6 +90,7 @@ export const MarkdownPlugin = {
 		}
 
 		renderContext.element.innerHTML = marked.parse(renderContext.text);
+		formatJsonCodeBlocks(renderContext.element);
 		patchExternalLinks(renderContext.element);
 		return true;
 	}

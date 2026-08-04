@@ -8,12 +8,35 @@ const marked = require('../../../assets/marked/marked.js');
 
 class FakeElement {
 	constructor() {
-		this.innerHTML = '';
+		this._innerHTML = '';
+		this.jsonCode = null;
 	}
 
-	querySelectorAll() {
+	set innerHTML(value) {
+		this._innerHTML = String(value);
+		const match = this._innerHTML.match(/<code class="language-json">([\s\S]*?)<\/code>/);
+		this.jsonCode = match ? { textContent: decodeHtml(match[1]) } : null;
+	}
+
+	get innerHTML() {
+		return this._innerHTML;
+	}
+
+	querySelectorAll(selector) {
+		if (selector === 'pre > code.language-json' && this.jsonCode) {
+			return [this.jsonCode];
+		}
 		return [];
 	}
+}
+
+function decodeHtml(value) {
+	return String(value)
+		.replaceAll('&quot;', '"')
+		.replaceAll('&#39;', "'")
+		.replaceAll('&lt;', '<')
+		.replaceAll('&gt;', '>')
+		.replaceAll('&amp;', '&');
 }
 
 class FakeClassList {
@@ -133,6 +156,29 @@ test('markdown plugin renders ordinary markdown without extension-specific branc
 	assert.match(html, /<h2>Result<\/h2>/);
 	assert.match(html, /<li>First<\/li>/);
 	assert.match(html, /<li>Second<\/li>/);
+});
+
+test('markdown plugin pretty prints json code blocks after rendering', () => {
+	const previousElement = globalThis.Element;
+	const element = new FakeElement();
+	globalThis.Element = FakeElement;
+
+	try {
+		const handled = MarkdownPlugin.renderMessageContent({
+			resolveGlobal(path) {
+				return path === 'marked' ? marked : null;
+			}
+		}, {
+			element,
+			text: '```json\n{"name":"example","items":[1,2]}\n```'
+		});
+
+		assert.equal(handled, true);
+		assert.equal(element.jsonCode.textContent, '{\n  "name": "example",\n  "items": [\n    1,\n    2\n  ]\n}');
+	}
+	finally {
+		globalThis.Element = previousElement;
+	}
 });
 
 test('markdown plugin handles opening-message link markup', () => {
