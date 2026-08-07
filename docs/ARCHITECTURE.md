@@ -66,3 +66,26 @@ listen -> send transcript -> wait for assistant -> speak response -> listen
 ```
 
 The chatbot core only emits normal message lifecycle events. It does not contain speech-specific state.
+
+## Agent activity rendering
+
+`AgentActivityPlugin` owns the normalized orchestration event flow. It converts stage and tool transport events into one renderer-neutral activity model and delegates presentation to an activity renderer.
+
+The built-in renderers are:
+
+- `ShimmerAgentActivityRenderer`: compact one-line progress with non-technical status text. This is the default through `AgentActivityPlugin`.
+- `DetailedAgentActivityRenderer`: persistent technical activity history with turn id, stage/tool state and expandable tool parameters.
+
+Both full plugin variants are exported as `ShimmerAgentActivityPlugin` and `DetailedAgentActivityPlugin`. A host developer can temporarily switch the installed plugin without changing transport or orchestration behavior. Only one activity plugin should be installed for a chatbot instance.
+
+An activity renderer implements these methods:
+
+```text
+createState(assistant)
+setTurnId(state, turnId)
+update(state, activity)
+onToken(state)
+complete(state, result)
+```
+
+The renderer receives only the normalized state. It must not subscribe to transport events itself.

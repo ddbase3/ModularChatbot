@@ -353,25 +353,64 @@
 	color: var(--base3-chatbot-muted);
 	font-size: 0.75rem;
 	line-height: 1.35;
-	opacity: 0.78;
 }
 
-.base3-chatbot-activity summary {
+.base3-chatbot-activity-detailed {
+	opacity: 0.82;
+}
+
+.base3-chatbot-activity-detailed > summary {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
 	cursor: pointer;
 	font-weight: 500;
 }
 
+.base3-chatbot-activity-summary-count {
+	opacity: 0.62;
+}
+
+.base3-chatbot-activity-turn {
+	display: flex;
+	align-items: baseline;
+	gap: 0.4rem;
+	padding: 0.25rem 0 0.15rem;
+	font-size: 0.68rem;
+}
+
+.base3-chatbot-activity-turn[hidden] {
+	display: none;
+}
+
+.base3-chatbot-activity-turn-label {
+	font-weight: 600;
+}
+
+.base3-chatbot-activity-turn-value {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	opacity: 0.75;
+}
+
 .base3-chatbot-activity-log {
-	max-height: 8rem;
+	max-height: 10rem;
 	overflow: auto;
-	padding: 0.2rem 0 0;
+	padding: 0.2rem 0.25rem 0 0;
 }
 
 .base3-chatbot-activity-entry {
-	display: grid;
-	grid-template-columns: minmax(6rem, auto) minmax(0, 1fr) auto;
-	gap: 0.3rem;
 	padding: 0.12rem 0;
+}
+
+.base3-chatbot-activity-line {
+	display: grid;
+	grid-template-columns: minmax(6rem, auto) minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: 0.3rem;
 }
 
 .base3-chatbot-activity-entry[data-status="failed"] {
@@ -380,6 +419,154 @@
 
 .base3-chatbot-activity-label {
 	font-weight: 600;
+}
+
+.base3-chatbot-activity-description {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.base3-chatbot-activity-meta {
+	font-size: 0.68rem;
+	opacity: 0.62;
+	white-space: nowrap;
+}
+
+.base3-chatbot-activity-state {
+	min-width: 0.8rem;
+	text-align: center;
+}
+
+.base3-chatbot-activity-params {
+	margin: 0.08rem 0 0 0.5rem;
+	padding-left: 0.5rem;
+	border-left: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.base3-chatbot-activity-params summary {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.2rem;
+	cursor: pointer;
+	font-size: 0.68rem;
+	opacity: 0.68;
+	list-style: none;
+	user-select: none;
+}
+
+.base3-chatbot-activity-params summary::marker {
+	content: "";
+}
+
+.base3-chatbot-activity-params summary::-webkit-details-marker {
+	display: none;
+}
+
+.base3-chatbot-activity-params summary::before {
+	content: "▸";
+	font-size: 0.62rem;
+}
+
+.base3-chatbot-activity-params[open] summary::before {
+	content: "▾";
+}
+
+.base3-chatbot-activity-params pre {
+	margin: 0.25rem 0 0.1rem;
+	padding: 0.3rem 0 0;
+	border-top: 1px solid rgba(0, 0, 0, 0.08);
+	background: transparent;
+	color: inherit;
+	font-size: 0.68rem;
+	line-height: 1.4;
+	white-space: pre-wrap;
+}
+
+.base3-chatbot-activity-shimmer {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	min-height: 1.5rem;
+	margin-bottom: 0.25rem;
+	opacity: 1;
+	transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.base3-chatbot-activity-shimmer.is-leaving {
+	opacity: 0;
+	transform: translateY(-1px);
+}
+
+.base3-chatbot-activity-shimmer-icon {
+	flex: 0 0 auto;
+	font-size: 0.9rem;
+	line-height: 1;
+	opacity: 0.58;
+	animation: base3ChatbotActivityIconPulse 1.8s ease-in-out infinite;
+}
+
+.base3-chatbot-activity-shimmer-text {
+	color: transparent;
+	background: linear-gradient(
+		100deg,
+		rgba(92, 92, 92, 0.58) 0%,
+		rgba(92, 92, 92, 0.58) 38%,
+		rgba(255, 255, 255, 0.98) 50%,
+		rgba(92, 92, 92, 0.58) 62%,
+		rgba(92, 92, 92, 0.58) 100%
+	);
+	background-size: 250% 100%;
+	background-clip: text;
+	-webkit-background-clip: text;
+	animation: base3ChatbotActivityShimmer 1.8s linear infinite;
+}
+
+@keyframes base3ChatbotActivityShimmer {
+	from {
+		background-position: 100% 0;
+	}
+	to {
+		background-position: -100% 0;
+	}
+}
+
+@keyframes base3ChatbotActivityIconPulse {
+	0%, 100% {
+		opacity: 0.42;
+		transform: scale(0.94);
+	}
+	50% {
+		opacity: 0.72;
+		transform: scale(1.04);
+	}
+}
+
+@media (max-width: 680px) {
+	.base3-chatbot-activity-line {
+		grid-template-columns: minmax(5rem, auto) minmax(0, 1fr) auto;
+	}
+
+	.base3-chatbot-activity-meta {
+		display: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.base3-chatbot-activity-shimmer-icon,
+	.base3-chatbot-activity-shimmer-text {
+		animation: none;
+	}
+
+	.base3-chatbot-activity-shimmer-text {
+		background: none;
+		color: var(--base3-chatbot-muted);
+	}
+
+	.base3-chatbot-activity-shimmer {
+		transition: none;
+	}
 }
 
 .base3-chatbot-interaction-card {
