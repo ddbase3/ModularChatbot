@@ -62,8 +62,9 @@ class FakeClassList {
 }
 
 class FakeFragmentNode {
-	constructor(tagName = 'div') {
+	constructor(tagName = 'div', ownerDocument = null) {
 		this.tagName = tagName.toUpperCase();
+		this.ownerDocument = ownerDocument;
 		this.children = [];
 		this.parentElement = null;
 		this.classList = new FakeClassList();
@@ -74,13 +75,13 @@ class FakeFragmentNode {
 		this._innerHTML = String(value);
 		this.children = [];
 		if (this._innerHTML.includes('language-base3-callout')) {
-			const pre = new FakeFragmentNode('pre');
-			const code = new FakeFragmentNode('code');
+			const pre = new FakeFragmentNode('pre', this.ownerDocument);
+			const code = new FakeFragmentNode('code', this.ownerDocument);
 			code.classList.add('language-base3-callout');
 			pre.appendChild(code);
 			this.appendChild(pre);
 		}
-		this.appendChild(new FakeFragmentNode('p'));
+		this.appendChild(new FakeFragmentNode('p', this.ownerDocument));
 	}
 
 	get innerHTML() {
@@ -89,6 +90,12 @@ class FakeFragmentNode {
 
 	get firstChild() {
 		return this.children[0] || null;
+	}
+
+	setAttribute() {}
+
+	append(...children) {
+		children.forEach((child) => this.appendChild(child));
 	}
 
 	appendChild(child) {
@@ -119,11 +126,11 @@ class FakeFragmentNode {
 
 class FakeDocument {
 	createElement(tagName) {
-		return new FakeFragmentNode(tagName);
+		return new FakeFragmentNode(tagName, this);
 	}
 
 	createDocumentFragment() {
-		return new FakeFragmentNode('#document-fragment');
+		return new FakeFragmentNode('#document-fragment', this);
 	}
 }
 
@@ -235,6 +242,39 @@ test('markdown fragment command returns a fragment and neutralizes nested extens
 		assert.equal(fragment.children.length, 2);
 		assert.equal(code.classList.contains('language-base3-callout'), false);
 		assert.equal(code.classList.contains('language-text'), true);
+	}
+	finally {
+		globalThis.Element = previousElement;
+	}
+});
+
+
+test('markdown fragment keeps base3 payload hidden behind the extension pending box', () => {
+	const previousElement = globalThis.Element;
+	globalThis.Element = FakeFragmentNode;
+	const document = new FakeDocument();
+	const context = {
+		root: { ownerDocument: document },
+		resolveGlobal(path) {
+			return path === 'marked'
+				? { parse: () => '<pre><code class="language-base3-callout">payload</code></pre><p>Text</p>' }
+				: null;
+		}
+	};
+
+	try {
+		const fragment = MarkdownPlugin.commands['markdown:render-fragment'](context, {
+			markdown: 'extension',
+			document,
+			allowExtensionBlocks: true
+		});
+		const pre = fragment.children[0];
+		const code = pre.children[0];
+
+		assert.equal(pre.classList.contains('base3-chatbot-extension-pending'), true);
+		assert.equal(code.classList.contains('language-base3-callout'), true);
+		assert.equal(pre.children[1].className, 'base3-chatbot-extension-pending-indicator');
+		assert.equal(pre.children[2].className, 'base3-chatbot-extension-pending-text');
 	}
 	finally {
 		globalThis.Element = previousElement;

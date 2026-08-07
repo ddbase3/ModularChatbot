@@ -55,6 +55,23 @@ test('conversation state normalization keeps one active chat and visible message
 	assert.equal(state.messages[1].feedback, 'like');
 });
 
+
+
+test('conversation state normalization preserves one pending interaction from server state', () => {
+	const source = createState();
+	source.pending_interaction = {
+		status: 'awaiting_approval',
+		resume_handle: 'scope.resume',
+		interaction_requests: [{ id: 'request-a', kind: 'approval' }]
+	};
+
+	const state = normalizeConversationState(source);
+
+	assert.equal(state.pending_interaction.status, 'awaiting_approval');
+	assert.equal(state.pending_interaction.resume_handle, 'scope.resume');
+	assert.equal(state.pending_interaction.interaction_requests.length, 1);
+});
+
 test('conversation state normalization accepts an unsaved draft without an active chat', () => {
 	const state = normalizeConversationState({
 		conversations: [],

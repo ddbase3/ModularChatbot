@@ -60,6 +60,24 @@ function normalizeDraft(value) {
 	};
 }
 
+function normalizePendingInteraction(value) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		return null;
+	}
+	const resumeHandle = String(value.resume_handle || '').trim();
+	const requests = Array.isArray(value.interaction_requests)
+		? value.interaction_requests.filter((request) => request && typeof request === 'object' && !Array.isArray(request))
+		: [];
+	if (!resumeHandle || requests.length === 0) {
+		return null;
+	}
+	return {
+		status: String(value.status || ''),
+		resume_handle: resumeHandle,
+		interaction_requests: requests
+	};
+}
+
 export function normalizeConversationState(value) {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new Error('Conversation response does not contain a valid state.');
@@ -89,7 +107,8 @@ export function normalizeConversationState(value) {
 		node_id: String(value.node_id || ''),
 		warnings: Array.isArray(value.warnings)
 			? value.warnings.map((warning) => String(warning))
-			: []
+			: [],
+		pending_interaction: normalizePendingInteraction(value.pending_interaction)
 	};
 }
 

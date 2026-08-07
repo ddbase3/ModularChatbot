@@ -102,6 +102,10 @@ export const ConversationPlugin = {
 				}
 			}
 			state.view.render(conversationState, settings.focusConversationId || '');
+			context.events.emit('conversation:state-applied', {
+				state: conversationState,
+				hydrated: settings.hydrate !== false
+			});
 			if (conversationState.warnings.length > 0) {
 				context.chatbot.announce(conversationState.warnings[0]);
 			}

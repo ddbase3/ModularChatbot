@@ -100,9 +100,41 @@ function renderInteraction(context, assistant, interaction) {
 	assistant.content.appendChild(container);
 }
 
+function restoreInteraction(context, interaction) {
+	context.chatbot.pendingInteraction = interaction;
+	const assistant = context.chatbot.createAssistantMessage();
+	assistant.completed = true;
+	context.chatbot.hideThinking(assistant);
+	renderInteraction(context, assistant, interaction);
+	context.chatbot.elements.messages.classList.remove('is-empty');
+	context.chatbot.root.classList.add('is-started');
+}
+
 export const AgentInteractionPlugin = {
 	name: 'agent-interaction',
 	transportEvents: ['agent.interaction.required'],
+
+	install(context) {
+		this.states ??= new WeakMap();
+		const unsubscribe = context.events.on('conversation:state-applied', ({ state, hydrated }) => {
+			if (!hydrated) {
+				return;
+			}
+			const interaction = normalizeInteraction(state?.pending_interaction);
+			if (interaction) {
+				restoreInteraction(context, interaction);
+			}
+		});
+		this.states.set(context.chatbot, unsubscribe);
+	},
+
+	destroy(context) {
+		const unsubscribe = this.states?.get(context.chatbot);
+		if (unsubscribe) {
+			unsubscribe();
+			this.states.delete(context.chatbot);
+		}
+	},
 
 	onTransportEvent(context, eventName, payload, eventContext) {
 		if (eventName !== 'agent.interaction.required') {
