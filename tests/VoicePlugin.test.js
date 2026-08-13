@@ -30,6 +30,44 @@ class UtteranceMock {
 	}
 }
 
+function createClassList() {
+	const values = new Set();
+	return {
+		toggle(name, force) {
+			if (force === undefined ? !values.has(name) : Boolean(force)) {
+				values.add(name);
+				return true;
+			}
+			values.delete(name);
+			return false;
+		},
+		contains(name) {
+			return values.has(name);
+		}
+	};
+}
+
+function createElement(tagName = 'div') {
+	return {
+		tagName: String(tagName).toUpperCase(),
+		className: '',
+		hidden: false,
+		textContent: '',
+		children: [],
+		attributes: new Map(),
+		appendChild(child) {
+			this.children.push(child);
+			return child;
+		},
+		setAttribute(name, value) {
+			this.attributes.set(name, String(value));
+		},
+		getAttribute(name) {
+			return this.attributes.get(name);
+		}
+	};
+}
+
 function createButton() {
 	return {
 		disabled: false,
@@ -43,18 +81,23 @@ function createButton() {
 	};
 }
 
-test('voice dialog alternates recognition, send, speech and recognition', () => {
+test('voice dialog alternates recognition, send, speech and recognition with listening state', () => {
 	const originalWindow = globalThis.window;
 	const originalDocument = globalThis.document;
 	const originalUtterance = globalThis.SpeechSynthesisUtterance;
 	const spoken = [];
 	const controls = new Map();
+	const elements = new Map();
 	const events = new ChatbotEventBus();
 	const sent = [];
+	const composer = {
+		classList: createClassList()
+	};
 	const chatbot = {
 		instanceId: 'chatbot-test',
 		sending: false,
 		elements: {
+			composer,
 			input: { value: '' }
 		}
 	};
@@ -72,7 +115,8 @@ test('voice dialog alternates recognition, send, speech and recognition', () => 
 	globalThis.document = {
 		documentElement: {
 			lang: 'de-DE'
-		}
+		},
+		createElement
 	};
 	globalThis.SpeechSynthesisUtterance = UtteranceMock;
 
@@ -84,6 +128,13 @@ test('voice dialog alternates recognition, send, speech and recognition', () => 
 				const button = createButton();
 				controls.set(definition.id, { button, definition });
 				return button;
+			},
+			addElement(slot, id, element) {
+				elements.set(id, { slot, element });
+				return element;
+			},
+			remove(id) {
+				elements.delete(id);
 			}
 		},
 		getPluginOptions() {
@@ -98,7 +149,9 @@ test('voice dialog alternates recognition, send, speech and recognition', () => 
 			sent.push(options);
 			chatbot.sending = true;
 		},
-		setComposerValue() {},
+		setComposerValue(value) {
+			chatbot.elements.input.value = value;
+		},
 		focusComposer() {}
 	};
 
@@ -107,6 +160,10 @@ test('voice dialog alternates recognition, send, speech and recognition', () => 
 		const dialog = controls.get('chatbot-test-voice-dialog');
 		const microphone = controls.get('chatbot-test-voice-microphone');
 		const speaker = controls.get('chatbot-test-voice-speaker');
+		const listening = elements.get('chatbot-test-voice-listening').element;
+
+		assert.equal(listening.hidden, true);
+		assert.equal(composer.classList.contains('is-listening'), false);
 
 		dialog.definition.onActivate();
 		assert.equal(dialog.button.getAttribute('aria-pressed'), 'true');
@@ -114,6 +171,8 @@ test('voice dialog alternates recognition, send, speech and recognition', () => 
 		assert.equal(speaker.button.disabled, true);
 		assert.equal(RecognitionMock.instances.length, 1);
 		assert.equal(RecognitionMock.instances[0].started, true);
+		assert.equal(listening.hidden, false);
+		assert.equal(composer.classList.contains('is-listening'), true);
 
 		RecognitionMock.instances[0].onresult({
 			resultIndex: 0,
@@ -123,6 +182,8 @@ test('voice dialog alternates recognition, send, speech and recognition', () => 
 
 		RecognitionMock.instances[0].onend();
 		assert.equal(dialog.button.getAttribute('aria-pressed'), 'true');
+		assert.equal(listening.hidden, true);
+		assert.equal(composer.classList.contains('is-listening'), false);
 
 		chatbot.sending = false;
 		events.emit('message:completed', {
@@ -137,12 +198,16 @@ test('voice dialog alternates recognition, send, speech and recognition', () => 
 		spoken[0].onend();
 		assert.equal(RecognitionMock.instances.length, 2);
 		assert.equal(RecognitionMock.instances[1].started, true);
+		assert.equal(listening.hidden, false);
+		assert.equal(composer.classList.contains('is-listening'), true);
 
 		dialog.definition.onActivate();
 		assert.equal(dialog.button.getAttribute('aria-pressed'), 'false');
 		assert.equal(microphone.button.disabled, false);
 		assert.equal(speaker.button.disabled, false);
 		assert.equal(RecognitionMock.instances[1].stopped, true);
+		assert.equal(listening.hidden, true);
+		assert.equal(composer.classList.contains('is-listening'), false);
 	} finally {
 		VoicePlugin.destroy(context);
 		globalThis.window = originalWindow;

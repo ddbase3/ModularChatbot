@@ -53,7 +53,7 @@ export { MarkdownPlugin } from './plugins/MarkdownPlugin.js?build=markdown-fragm
 export { MessageActionsPlugin } from './plugins/MessageActionsPlugin.js?build=conversation-draft-1';
 export { ReferencePlugin } from './plugins/ReferencePlugin.js?build=conversation-draft-1';
 export { SuggestionsPlugin } from './plugins/SuggestionsPlugin.js?build=conversation-draft-1';
-export { VoicePlugin } from './plugins/VoicePlugin.js?build=tts-stream-2';
+export { VoicePlugin } from './plugins/VoicePlugin.js?build=voice-services-1';
 
 export { BackendTextToSpeechProvider } from './speech/BackendTextToSpeechProvider.js?build=tts-stream-2';
 export { BackendRealtimeSpeechToTextProvider } from './speech/BackendRealtimeSpeechToTextProvider.js?build=conversation-draft-1';

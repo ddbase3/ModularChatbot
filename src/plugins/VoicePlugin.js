@@ -59,6 +59,45 @@ function setDisabled(button, disabled) {
 	}
 }
 
+function createListeningIndicator(context, state) {
+	const indicator = document.createElement('div');
+	indicator.className = 'base3-chatbot-voice-listening';
+	indicator.hidden = true;
+	indicator.setAttribute('role', 'status');
+	indicator.setAttribute('aria-live', 'polite');
+
+	const bars = document.createElement('span');
+	bars.className = 'base3-chatbot-voice-listening-bars';
+	bars.setAttribute('aria-hidden', 'true');
+	for (let index = 0; index < 5; index += 1) {
+		const bar = document.createElement('span');
+		bar.className = 'base3-chatbot-voice-listening-bar';
+		bars.appendChild(bar);
+	}
+
+	const label = document.createElement('span');
+	label.textContent = 'Höre zu…';
+	indicator.appendChild(bars);
+	indicator.appendChild(label);
+
+	state.listeningIndicatorId = `${context.chatbot.instanceId}-voice-listening`;
+	state.listeningIndicator = context.ui.addElement(
+		'composer-overlay',
+		state.listeningIndicatorId,
+		indicator,
+		10
+	);
+}
+
+function setListeningState(state, active) {
+	const listening = Boolean(active);
+	state.listening = listening;
+	if (state.listeningIndicator) {
+		state.listeningIndicator.hidden = !listening;
+	}
+	state.composer?.classList.toggle('is-listening', listening);
+}
+
 function cancelSpeech(state) {
 	state.speechToken += 1;
 	if ('speechSynthesis' in window) {
@@ -89,6 +128,7 @@ function disposeRecognition(state) {
 	}
 
 	state.recording = false;
+	setListeningState(state, false);
 	setPressed(state.microphoneButton, false);
 }
 
@@ -240,6 +280,7 @@ function startBrowserRecognition(context, options, state) {
 	state.recording = true;
 	state.hadSpeechResult = false;
 	state.composerPrefix = context.chatbot.elements.input.value.trim();
+	setListeningState(state, true);
 	setPressed(state.microphoneButton, true);
 
 	recognition.onresult = (event) => {
@@ -271,6 +312,7 @@ function startBrowserRecognition(context, options, state) {
 
 		state.recognition = null;
 		state.recording = false;
+		setListeningState(state, false);
 		setPressed(state.microphoneButton, false);
 		context.events.emit('voice:recording-ended', {
 			chatbot: context.chatbot,
@@ -297,6 +339,7 @@ async function startRealtimeRecognition(context, options, state) {
 	state.composerPrefix = context.chatbot.elements.input.value.trim();
 	state.hadSpeechResult = false;
 	state.recording = true;
+	setListeningState(state, true);
 	setPressed(state.microphoneButton, true);
 
 	const provider = new BackendRealtimeSpeechToTextProvider({
@@ -322,6 +365,7 @@ async function startRealtimeRecognition(context, options, state) {
 			}
 			state.realtimeProvider = null;
 			state.recording = false;
+			setListeningState(state, false);
 			setPressed(state.microphoneButton, false);
 			context.events.emit('voice:recording-ended', {
 				chatbot: context.chatbot,
@@ -332,6 +376,7 @@ async function startRealtimeRecognition(context, options, state) {
 			}
 		},
 		onError: (error) => {
+			setListeningState(state, false);
 			context.events.emit('chatbot:error', error);
 			if (state.dialogEnabled) {
 				endDialogMode(context, state);
@@ -347,6 +392,9 @@ async function startRealtimeRecognition(context, options, state) {
 		if (state.realtimeProvider === provider) {
 			state.realtimeProvider = null;
 		}
+		state.recording = false;
+		setListeningState(state, false);
+		setPressed(state.microphoneButton, false);
 		throw error;
 	}
 }
@@ -360,6 +408,7 @@ function startRecognition(context, options, state) {
 		if (options.stt.provider === 'backend') {
 			startRealtimeRecognition(context, options, state).catch((error) => {
 				state.recording = false;
+				setListeningState(state, false);
 				setPressed(state.microphoneButton, false);
 				context.events.emit('chatbot:error', error);
 				if (state.dialogEnabled) {
@@ -377,6 +426,7 @@ function startRecognition(context, options, state) {
 		});
 	} catch (error) {
 		state.recording = false;
+		setListeningState(state, false);
 		setPressed(state.microphoneButton, false);
 		context.events.emit('chatbot:error', error);
 		if (state.dialogEnabled) {
@@ -452,6 +502,10 @@ export const VoicePlugin = {
 			speechToken: 0,
 			hadSpeechResult: false,
 			composerPrefix: '',
+			composer: context.chatbot.elements.composer,
+			listening: false,
+			listeningIndicatorId: '',
+			listeningIndicator: null,
 			microphoneButton: null,
 			speakerButton: null,
 			dialogButton: null
@@ -460,6 +514,7 @@ export const VoicePlugin = {
 		this.states.set(context.chatbot, state);
 
 		if (options.stt.enabled) {
+			createListeningIndicator(context, state);
 			state.microphoneButton = context.ui.addControl('composer-end', {
 				id: `${context.chatbot.instanceId}-voice-microphone`,
 				label: 'Spracheingabe starten oder stoppen',
@@ -542,6 +597,9 @@ export const VoicePlugin = {
 			disposeRecognition(state);
 			cancelSpeech(state);
 			state.backendTtsProvider?.destroy();
+			if (state.listeningIndicatorId) {
+				context.ui.remove(state.listeningIndicatorId);
+			}
 		}
 		this.states?.delete(context.chatbot);
 	}

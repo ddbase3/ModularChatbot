@@ -244,11 +244,18 @@
 }
 
 .base3-chatbot-composer {
+	position: relative;
 	grid-area: composer;
 	padding: 0.75rem 1rem;
 	border: 1px solid var(--base3-chatbot-border);
 	border-radius: 1.5rem;
 	background: var(--base3-chatbot-surface);
+	transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.base3-chatbot-composer.is-listening {
+	border-color: currentColor;
+	box-shadow: 0 0 0 1px currentColor inset;
 }
 
 .base3-chatbot-input {
@@ -261,8 +268,93 @@
 	background: transparent;
 	font: inherit;
 	resize: none;
+	transition: padding-right 120ms ease;
 }
 
+.base3-chatbot-composer.is-listening .base3-chatbot-input {
+	padding-right: 7.5rem;
+}
+
+.base3-chatbot-composer-overlay {
+	position: absolute;
+	z-index: 2;
+	top: 0.9rem;
+	right: 1.15rem;
+	display: flex;
+	align-items: center;
+	pointer-events: none;
+}
+
+.base3-chatbot-voice-listening {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+	min-height: 1.75rem;
+	padding: 0.2rem 0.45rem;
+	border: 1px solid var(--base3-chatbot-border);
+	border-radius: 999px;
+	background: var(--base3-chatbot-surface);
+	color: inherit;
+	font-size: 0.75rem;
+	line-height: 1;
+}
+
+.base3-chatbot-voice-listening[hidden] {
+	display: none;
+}
+
+.base3-chatbot-voice-listening-bars {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.12rem;
+	height: 0.9rem;
+}
+
+.base3-chatbot-voice-listening-bar {
+	display: block;
+	width: 0.12rem;
+	height: 0.65rem;
+	border-radius: 999px;
+	background: currentColor;
+	transform-origin: center;
+	animation: base3-chatbot-voice-listening 720ms ease-in-out infinite alternate;
+}
+
+.base3-chatbot-voice-listening-bar:nth-child(2) {
+	animation-delay: 120ms;
+}
+
+.base3-chatbot-voice-listening-bar:nth-child(3) {
+	animation-delay: 240ms;
+}
+
+.base3-chatbot-voice-listening-bar:nth-child(4) {
+	animation-delay: 360ms;
+}
+
+.base3-chatbot-voice-listening-bar:nth-child(5) {
+	animation-delay: 480ms;
+}
+
+@keyframes base3-chatbot-voice-listening {
+	from {
+		transform: scaleY(0.35);
+	}
+	to {
+		transform: scaleY(1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.base3-chatbot-composer,
+	.base3-chatbot-input {
+		transition: none;
+	}
+
+	.base3-chatbot-voice-listening-bar {
+		animation: none;
+	}
+}
 
 .base3-chatbot-actions {
 	display: flex;
