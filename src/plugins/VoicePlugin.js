@@ -11,7 +11,7 @@ function cleanText(value) {
 
 function resolveLanguage(options) {
 	return options.lang === 'auto'
-		? document.documentElement.lang || 'de-DE'
+		? document.documentElement.lang || 'en-US'
 		: options.lang;
 }
 
@@ -76,7 +76,7 @@ function createListeningIndicator(context, state) {
 	}
 
 	const label = document.createElement('span');
-	label.textContent = 'Höre zu…';
+	label.textContent = context.getString('listening');
 	indicator.appendChild(bars);
 	indicator.appendChild(label);
 
@@ -517,7 +517,7 @@ export const VoicePlugin = {
 			createListeningIndicator(context, state);
 			state.microphoneButton = context.ui.addControl('composer-end', {
 				id: `${context.chatbot.instanceId}-voice-microphone`,
-				label: 'Spracheingabe starten oder stoppen',
+				label: context.getString('startStopVoiceInput'),
 				icon: options.icons?.microphone || '',
 				pressed: false,
 				order: 10,
@@ -528,7 +528,7 @@ export const VoicePlugin = {
 		if (options.tts.enabled) {
 			state.speakerButton = context.ui.addControl('composer-end', {
 				id: `${context.chatbot.instanceId}-voice-speaker`,
-				label: 'Sprachausgabe ein- oder ausschalten',
+				label: context.getString('toggleVoiceOutput'),
 				icon: options.icons?.speaker || '',
 				pressed: false,
 				order: 20,
@@ -552,7 +552,7 @@ export const VoicePlugin = {
 		if (options.dialog && options.stt.enabled && options.tts.enabled) {
 			state.dialogButton = context.ui.addControl('composer-end', {
 				id: `${context.chatbot.instanceId}-voice-dialog`,
-				label: 'Wechselsprechen ein- oder ausschalten',
+				label: context.getString('toggleDialogMode'),
 				icon: options.icons?.dialogue || '',
 				pressed: false,
 				order: 30,

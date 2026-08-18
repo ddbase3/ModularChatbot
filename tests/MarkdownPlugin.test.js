@@ -68,6 +68,8 @@ class FakeFragmentNode {
 		this.children = [];
 		this.parentElement = null;
 		this.classList = new FakeClassList();
+		this.className = '';
+		this.textContent = '';
 		this._innerHTML = '';
 	}
 
@@ -78,6 +80,9 @@ class FakeFragmentNode {
 			const pre = new FakeFragmentNode('pre', this.ownerDocument);
 			const code = new FakeFragmentNode('code', this.ownerDocument);
 			code.classList.add('language-base3-callout');
+			code.className = 'language-base3-callout';
+			const codeMatch = this._innerHTML.match(/<code class="language-base3-callout">([\s\S]*?)<\/code>/);
+			code.textContent = codeMatch ? decodeHtml(codeMatch[1]) : '';
 			pre.appendChild(code);
 			this.appendChild(pre);
 		}
@@ -107,19 +112,66 @@ class FakeFragmentNode {
 		return child;
 	}
 
+	get childNodes() {
+		return this.children;
+	}
+
+	replaceChildren(...children) {
+		for (const child of this.children) {
+			child.parentElement = null;
+		}
+		this.children = [];
+		this.append(...children);
+	}
+
+	replaceWith(replacement) {
+		if (!this.parentElement) {
+			return;
+		}
+		const parent = this.parentElement;
+		const index = parent.children.indexOf(this);
+		if (index < 0) {
+			return;
+		}
+		if (replacement.parentElement) {
+			replacement.parentElement.children = replacement.parentElement.children.filter((candidate) => candidate !== replacement);
+		}
+		parent.children[index] = replacement;
+		replacement.parentElement = parent;
+		this.parentElement = null;
+	}
+
+	querySelector(selector) {
+		if (selector === 'code') {
+			return this.children.find((child) => child.tagName === 'CODE') || null;
+		}
+		if (selector === '.base3-chatbot-extension-pending-text') {
+			return this.children.find((child) => child.className === 'base3-chatbot-extension-pending-text') || null;
+		}
+		return null;
+	}
+
 	querySelectorAll(selector) {
 		if (selector === 'a[href]') {
 			return [];
 		}
-		if (selector !== 'pre > code') {
+		if (selector === '.base3-chatbot-extension-pending') {
+			return this.children.filter((child) => child.classList.contains('base3-chatbot-extension-pending'));
+		}
+		if (selector !== 'pre > code' && selector !== 'pre > code.language-json') {
 			return [];
 		}
 
 		return this.children.flatMap((child) => {
-			if (child.tagName === 'PRE') {
-				return child.children.filter((candidate) => candidate.tagName === 'CODE');
+			if (child.tagName !== 'PRE') {
+				return [];
 			}
-			return [];
+			return child.children.filter((candidate) => {
+				if (candidate.tagName !== 'CODE') {
+					return false;
+				}
+				return selector === 'pre > code' || candidate.classList.contains('language-json');
+			});
 		});
 	}
 }
@@ -141,6 +193,7 @@ function render(text) {
 
 	try {
 		const handled = MarkdownPlugin.renderMessageContent({
+			getString: (key) => key,
 			resolveGlobal(path) {
 				return path === 'marked' ? marked : null;
 			}
@@ -172,6 +225,7 @@ test('markdown plugin pretty prints json code blocks after rendering', () => {
 
 	try {
 		const handled = MarkdownPlugin.renderMessageContent({
+			getString: (key) => key,
 			resolveGlobal(path) {
 				return path === 'marked' ? marked : null;
 			}
@@ -273,8 +327,44 @@ test('markdown fragment keeps base3 payload hidden behind the extension pending 
 
 		assert.equal(pre.classList.contains('base3-chatbot-extension-pending'), true);
 		assert.equal(code.classList.contains('language-base3-callout'), true);
-		assert.equal(pre.children[1].className, 'base3-chatbot-extension-pending-indicator');
-		assert.equal(pre.children[2].className, 'base3-chatbot-extension-pending-text');
+		assert.equal(pre.children.length, 2);
+		assert.equal(pre.children[1].className, 'base3-chatbot-extension-pending-text');
+	}
+	finally {
+		globalThis.Element = previousElement;
+	}
+});
+
+
+test('markdown plugin preserves the pending extension element while streamed code grows', () => {
+	const previousElement = globalThis.Element;
+	globalThis.Element = FakeFragmentNode;
+	const document = new FakeDocument();
+	const element = new FakeFragmentNode('div', document);
+	const context = {
+		root: { ownerDocument: document },
+		getPluginOptions: () => ({ strings: { extensionLoading: 'Loading' } }),
+		resolveGlobal(path) {
+			return path === 'marked' ? marked : null;
+		}
+	};
+
+	try {
+		MarkdownPlugin.renderMessageContent(context, {
+			element,
+			text: '```base3-callout\nfirst\n```'
+		});
+		const pending = element.querySelectorAll('.base3-chatbot-extension-pending')[0];
+		assert.ok(pending);
+
+		MarkdownPlugin.renderMessageContent(context, {
+			element,
+			text: '```base3-callout\nfirst second\n```'
+		});
+		const updated = element.querySelectorAll('.base3-chatbot-extension-pending')[0];
+
+		assert.equal(updated, pending);
+		assert.match(updated.querySelector('code').textContent, /first second/);
 	}
 	finally {
 		globalThis.Element = previousElement;

@@ -244,10 +244,14 @@ test('conversation controls remain usable when initial history loading fails', a
 		['[data-chatbot-conversation-collapse]', createElement()]
 	]);
 	const controls = [];
+	let loadingCalls = 0;
+	let replacedMessages = 0;
 	const chatbot = {
 		conversationManaged: false,
 		announce() {},
-		instanceId: 'chatbot-test'
+		showConversationLoading() { loadingCalls += 1; },
+		instanceId: 'chatbot-test',
+		isCompactLayout: () => false
 	};
 	const context = {
 		chatbot,
@@ -263,9 +267,12 @@ test('conversation controls remain usable when initial history loading fails', a
 			}
 		},
 		signal: new AbortController().signal,
+		getOptions: () => ({ strings: {} }),
+		getString: (key) => key,
 		getPluginOptions: () => ({
 			enabled: true,
 			multiple: true,
+			firstMessageMode: 'contextual_ai',
 			urls: {
 				state: '/state',
 				create: '/create',
@@ -279,6 +286,7 @@ test('conversation controls remain usable when initial history loading fails', a
 		}),
 		isSending: () => false,
 		getConversationId: () => '',
+		replaceMessages() { replacedMessages += 1; },
 		events: {
 			emit() {},
 			on() { return () => {}; }
@@ -299,6 +307,8 @@ test('conversation controls remain usable when initial history loading fails', a
 		assert.equal(controls.length, 2);
 		assert.equal(controls.every((control) => control.disabled === false), true);
 		assert.equal(list.children.length, 1);
+		assert.equal(loadingCalls, 1);
+		assert.equal(replacedMessages, 1);
 	} finally {
 		ConversationPlugin.destroy(context);
 		globalThis.fetch = originalFetch;

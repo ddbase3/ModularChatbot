@@ -31,11 +31,9 @@ function ensureStyles(root) {
 	const style = document.createElement('style');
 	style.setAttribute(STYLE_ATTRIBUTE, '');
 	style.textContent = `
-.base3-chatbot-extension-pending { display: flex; align-items: center; gap: 0.65rem; min-height: 3.25rem; margin: 0.75rem 0; padding: 0.8rem 0.95rem; border: 1px solid color-mix(in srgb, currentColor 14%, transparent); border-radius: 0.5rem; background: color-mix(in srgb, currentColor 3%, transparent); }
+.base3-chatbot-extension-pending { display: flex; align-items: center; min-height: 3.25rem; margin: 0.75rem 0; padding: 0.8rem 0.95rem; border: 1px solid color-mix(in srgb, currentColor 14%, transparent); border-radius: 0.5rem; background: color-mix(in srgb, currentColor 3%, transparent); }
 .base3-chatbot-extension-pending > code { display: none !important; }
-.base3-chatbot-extension-pending-indicator { width: 1rem; height: 1rem; flex: 0 0 auto; border: 2px solid color-mix(in srgb, currentColor 22%, transparent); border-top-color: currentColor; border-radius: 50%; animation: base3-chatbot-extension-spin 0.8s linear infinite; }
 .base3-chatbot-extension-pending-text { opacity: 0.72; }
-@keyframes base3-chatbot-extension-spin { to { transform: rotate(360deg); } }
 `;
 	root.appendChild(style);
 }
@@ -73,14 +71,67 @@ function markExtensionBlocksPending(container, text = 'Inhalt wird erstellt …'
 		}
 		pre.classList.add('base3-chatbot-extension-pending');
 		const document = code.ownerDocument || globalThis.document;
-		const indicator = document.createElement('span');
-		indicator.className = 'base3-chatbot-extension-pending-indicator';
-		indicator.setAttribute('aria-hidden', 'true');
 		const label = document.createElement('span');
 		label.className = 'base3-chatbot-extension-pending-text';
 		label.textContent = text;
-		pre.append(indicator, label);
+		pre.append(label);
 	});
+}
+
+function getPendingExtensionBlocks(container) {
+	if (!container || typeof container.querySelectorAll !== 'function') {
+		return [];
+	}
+	return Array.from(container.querySelectorAll('.base3-chatbot-extension-pending'));
+}
+
+function preservePendingExtensionBlocks(currentContainer, nextContainer) {
+	const currentBlocks = getPendingExtensionBlocks(currentContainer);
+	const nextBlocks = getPendingExtensionBlocks(nextContainer);
+
+	nextBlocks.forEach((nextBlock, index) => {
+		const currentBlock = currentBlocks[index];
+		if (!currentBlock || typeof nextBlock.replaceWith !== 'function') {
+			return;
+		}
+
+		const currentCode = currentBlock.querySelector?.('code') || null;
+		const nextCode = nextBlock.querySelector?.('code') || null;
+		if (currentCode && nextCode) {
+			currentCode.textContent = nextCode.textContent;
+			currentCode.className = nextCode.className;
+		}
+
+		const currentLabel = currentBlock.querySelector?.('.base3-chatbot-extension-pending-text') || null;
+		const nextLabel = nextBlock.querySelector?.('.base3-chatbot-extension-pending-text') || null;
+		if (currentLabel && nextLabel) {
+			currentLabel.textContent = nextLabel.textContent;
+		}
+
+		nextBlock.replaceWith(currentBlock);
+	});
+}
+
+function renderStreamingMarkdown(context, renderContext, marked, loadingText) {
+	const currentPending = getPendingExtensionBlocks(renderContext.element);
+	if (currentPending.length === 0) {
+		renderContext.element.innerHTML = marked.parse(renderContext.text);
+		markExtensionBlocksPending(renderContext.element, loadingText);
+		return;
+	}
+
+	const document = renderContext.element.ownerDocument || context.root?.ownerDocument || globalThis.document;
+	if (!document || typeof document.createElement !== 'function' || typeof renderContext.element.replaceChildren !== 'function') {
+		renderContext.element.innerHTML = marked.parse(renderContext.text);
+		markExtensionBlocksPending(renderContext.element, loadingText);
+		return;
+	}
+
+	const nextContainer = document.createElement('div');
+	nextContainer.innerHTML = marked.parse(renderContext.text);
+	markExtensionBlocksPending(nextContainer, loadingText);
+	preservePendingExtensionBlocks(renderContext.element, nextContainer);
+	renderContext.element.replaceChildren(...Array.from(nextContainer.childNodes));
 }
 
 function renderMarkdownFragment(context, payload = {}) {
@@ -129,11 +180,12 @@ export const MarkdownPlugin = {
 		if (!marked || typeof marked.parse !== 'function') {
 			return false;
 		}
-		renderContext.element.innerHTML = marked.parse(renderContext.text);
 		const options = typeof context.getPluginOptions === 'function' ? context.getPluginOptions() : {};
-		markExtensionBlocksPending(
-			renderContext.element,
-			options?.strings?.extensionLoading || 'Inhalt wird erstellt …'
+		renderStreamingMarkdown(
+			context,
+			renderContext,
+			marked,
+			options?.strings?.extensionLoading || context.getString('extensionLoading')
 		);
 		formatJsonCodeBlocks(renderContext.element);
 		patchExternalLinks(renderContext.element);

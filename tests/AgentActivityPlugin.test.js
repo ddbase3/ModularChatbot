@@ -16,9 +16,13 @@ function createHarness(renderer) {
 	};
 	const context = {
 		events,
+		getString: (key) => key,
 		chatbot: {
 			hideThinking(value) {
 				calls.push(['hideThinking', value]);
+			},
+			scrollToBottom() {
+				calls.push(['scrollToBottom']);
 			}
 		}
 	};
@@ -66,7 +70,10 @@ test('agent activity plugin keeps msgid available to the core while forwarding t
 		['createState'],
 		['setTurnId', 'turn-42']
 	]);
-	assert.equal(harness.calls[0][0], 'hideThinking');
+	assert.deepEqual(harness.calls.map(([name]) => name), [
+		'hideThinking',
+		'scrollToBottom'
+	]);
 });
 
 test('agent activity plugin normalizes tool activity once before rendering', () => {
@@ -104,6 +111,10 @@ test('agent activity plugin normalizes tool activity once before rendering', () 
 	assert.deepEqual(activity.args, { query: 'BASE3' });
 	assert.equal(activity.iteration, 2);
 	assert.equal(activity.callIndex, 1);
+	assert.deepEqual(harness.calls.map(([name]) => name), [
+		'hideThinking',
+		'scrollToBottom'
+	]);
 });
 
 test('agent activity lifecycle is delegated to the selected renderer', () => {
@@ -132,5 +143,31 @@ test('agent activity lifecycle is delegated to the selected renderer', () => {
 		['token', harness.assistant.activityState],
 		['complete', false],
 		['complete', true]
+	]);
+});
+
+
+test('shimmer agent activity keeps the existing thinking element visible', () => {
+	const renderer = {
+		name: 'shimmer',
+		createState() {
+			return {};
+		},
+		setTurnId() {},
+		update() {},
+		onToken() {},
+		complete() {}
+	};
+	const harness = createHarness(renderer);
+
+	harness.plugin.onTransportEvent(
+		harness.context,
+		'tool.started',
+		{ call_id: 'call-1', tool: 'search' },
+		{ assistant: harness.assistant }
+	);
+
+	assert.deepEqual(harness.calls.map(([name]) => name), [
+		'scrollToBottom'
 	]);
 });

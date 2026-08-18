@@ -205,7 +205,7 @@ export class ConversationApi {
 
 		const result = await response.json();
 		if (!result || result.ok !== true) {
-			const message = String(result?.error?.message || 'Conversation request failed.');
+			const message = String(result?.error?.message || '');
 			const error = new Error(message);
 			error.code = String(result?.error?.code || 'conversation_error');
 			throw error;

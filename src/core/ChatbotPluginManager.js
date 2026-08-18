@@ -13,6 +13,7 @@ export class ChatbotPluginManager {
 			ui: this.chatbot.ui,
 			signal: this.chatbot.signal,
 			getOptions: () => this.chatbot.options,
+			getString: (key, replacements = {}) => this.chatbot.getString(key, replacements),
 			getPluginOptions: (name = pluginName) => {
 				if (!name) {
 					return {};

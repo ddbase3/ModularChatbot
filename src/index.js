@@ -1,4 +1,4 @@
-import { Chatbot } from './Chatbot.js?build=response-extensions-1';
+import { Chatbot } from './Chatbot.js?build=contextual-opening-loading-1';
 
 const mountedChatbots = new WeakMap();
 
@@ -34,7 +34,7 @@ export function unmountChatbot(root) {
 	mountedChatbots.delete(root);
 }
 
-export { Chatbot } from './Chatbot.js?build=response-extensions-1';
+export { Chatbot } from './Chatbot.js?build=contextual-opening-loading-1';
 export { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=conversation-draft-1';
 export { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
 export { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=response-extensions-1';
@@ -42,15 +42,15 @@ export { ChatbotUiRegistry } from './core/ChatbotUiRegistry.js?build=conversatio
 export { RestChatTransport } from './transport/RestChatTransport.js?build=conversation-draft-1';
 export { SseChatTransport } from './transport/SseChatTransport.js?build=conversation-draft-1';
 export { ConversationApi, normalizeConversationState } from './conversation/ConversationApi.js?build=conversation-draft-1';
-export { ConversationView } from './conversation/ConversationView.js?build=conversation-title-contract-1';
-export { AgentActivityPlugin, DetailedAgentActivityPlugin, ShimmerAgentActivityPlugin, createAgentActivityPlugin } from './plugins/AgentActivityPlugin.js?build=agent-activity-renderers-1';
+export { ConversationView } from './conversation/ConversationView.js?build=layout-icons-2';
+export { AgentActivityPlugin, DetailedAgentActivityPlugin, ShimmerAgentActivityPlugin, createAgentActivityPlugin } from './plugins/AgentActivityPlugin.js?build=thinking-persist-1';
 export { DetailedAgentActivityRenderer } from './plugins/agent-activity/DetailedAgentActivityRenderer.js?build=agent-activity-renderers-1';
 export { ShimmerAgentActivityRenderer } from './plugins/agent-activity/ShimmerAgentActivityRenderer.js?build=agent-activity-renderers-1';
-export { AgentInteractionPlugin } from './plugins/AgentInteractionPlugin.js?build=conversation-draft-1';
+export { AgentInteractionPlugin } from './plugins/AgentInteractionPlugin.js?build=user-time-thinking-layout-1';
 export { CanvasPlugin } from './plugins/CanvasPlugin.js?build=conversation-draft-1';
-export { ConversationPlugin } from './plugins/ConversationPlugin.js?build=conversation-title-contract-1';
-export { MarkdownPlugin } from './plugins/MarkdownPlugin.js?build=markdown-fragments-1';
-export { MessageActionsPlugin } from './plugins/MessageActionsPlugin.js?build=conversation-draft-1';
+export { ConversationPlugin } from './plugins/ConversationPlugin.js?build=title-after-user-1';
+export { MarkdownPlugin } from './plugins/MarkdownPlugin.js?build=extension-pending-text-2';
+export { MessageActionsPlugin } from './plugins/MessageActionsPlugin.js?build=initial-no-actions-1';
 export { ReferencePlugin } from './plugins/ReferencePlugin.js?build=conversation-draft-1';
 export { SuggestionsPlugin } from './plugins/SuggestionsPlugin.js?build=conversation-draft-1';
 export { VoicePlugin } from './plugins/VoicePlugin.js?build=voice-services-1';

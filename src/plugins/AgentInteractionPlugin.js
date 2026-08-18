@@ -18,12 +18,12 @@ function normalizeInteraction(payload) {
 	};
 }
 
-function formatValue(value) {
+function formatValue(context, value) {
 	if (value === null || value === undefined || value === '') {
 		return '-';
 	}
 	if (typeof value === 'boolean') {
-		return value ? 'Ja' : 'Nein';
+		return value ? context.getString('yesLabel') : context.getString('noLabel');
 	}
 	if (typeof value === 'object') {
 		return JSON.stringify(value);
@@ -32,18 +32,19 @@ function formatValue(value) {
 }
 
 function renderInteraction(context, assistant, interaction) {
+	context.chatbot.showAssistant(assistant);
 	assistant.content.replaceChildren();
 	const container = document.createElement('div');
 	container.className = 'base3-chatbot-interaction';
 	container.setAttribute('role', 'group');
-	container.setAttribute('aria-label', 'Bestätigung erforderlich');
+	container.setAttribute('aria-label', context.getString('interactionRequired'));
 
 	interaction.interaction_requests.forEach((request) => {
 		const card = document.createElement('section');
 		card.className = 'base3-chatbot-interaction-card';
 
 		const heading = document.createElement('h3');
-		heading.textContent = String(request.title || 'Bestätigung erforderlich');
+		heading.textContent = String(request.title || context.getString('interactionRequired'));
 		card.appendChild(heading);
 
 		if (request.risk) {
@@ -64,7 +65,7 @@ function renderInteraction(context, assistant, interaction) {
 				const term = document.createElement('dt');
 				term.textContent = label;
 				const description = document.createElement('dd');
-				description.textContent = formatValue(value);
+				description.textContent = formatValue(context, value);
 				summary.append(term, description);
 			});
 			card.appendChild(summary);
@@ -79,11 +80,11 @@ function renderInteraction(context, assistant, interaction) {
 		const approve = document.createElement('button');
 		approve.type = 'button';
 		approve.className = 'base3-chatbot-button base3-chatbot-button-primary';
-		approve.textContent = 'Zustimmen';
+		approve.textContent = context.getString('approve');
 		const deny = document.createElement('button');
 		deny.type = 'button';
 		deny.className = 'base3-chatbot-button';
-		deny.textContent = 'Abbrechen';
+		deny.textContent = context.getString('deny');
 
 		const submit = (decision) => {
 			approve.disabled = true;

@@ -31,6 +31,7 @@ function createChatbot() {
 	chatbot.renderAssistant = () => {};
 	chatbot.setSending = () => {};
 	chatbot.scrollToBottom = () => {};
+	chatbot.scrollMessageToStart = () => {};
 	return chatbot;
 }
 
@@ -50,6 +51,18 @@ test('normal completion consumes a pending interaction without tokens', () => {
 
 	assert.equal(chatbot.pendingInteraction, null);
 	assert.equal(chatbot.activeAssistant.completed, true);
+});
+
+test('completion returns the viewport to the start of the completed assistant message', () => {
+	const chatbot = createChatbot();
+	let scrolledMessage = null;
+	chatbot.scrollMessageToStart = (message) => {
+		scrolledMessage = message;
+	};
+
+	chatbot.finishActiveMessage();
+
+	assert.equal(scrolledMessage, chatbot.activeAssistant);
 });
 
 test('interaction completion preserves the newly pending interaction', () => {
@@ -126,10 +139,12 @@ test('hydrated conversation state restores the existing pending interaction UI',
 			return createdAssistant;
 		},
 		hideThinking() {},
+		showAssistant() {},
 		resumeInteraction() {}
 	};
 	const context = {
 		chatbot,
+		getString: (key) => key,
 		signal: new AbortController().signal,
 		events: {
 			on(name, listener) {

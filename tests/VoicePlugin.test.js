@@ -123,6 +123,7 @@ test('voice dialog alternates recognition, send, speech and recognition with lis
 	const context = {
 		chatbot,
 		events,
+		getString: (key) => key,
 		ui: {
 			addControl(slot, definition) {
 				const button = createButton();

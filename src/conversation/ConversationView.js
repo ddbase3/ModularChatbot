@@ -75,7 +75,7 @@ export class ConversationView {
 			context.root.querySelector('.base3-chatbot-ai-notice'),
 			context.root.querySelector('[data-chatbot-canvas]')
 		].filter(Boolean);
-		this.media = window.matchMedia('(min-width: 50.001rem)');
+		this.unsubscribeLayout = null;
 		this.handleKeyboardNavigation = (event) => {
 			if (event.key === 'Tab' || event.key.startsWith('Arrow')) {
 				this.context.root.classList.add('is-keyboard-navigation');
@@ -84,9 +84,9 @@ export class ConversationView {
 		this.handlePointerNavigation = () => {
 			this.context.root.classList.remove('is-keyboard-navigation');
 		};
-		this.handleViewportChange = () => {
+		this.handleLayoutChange = ({ compact }) => {
 			if (this.enabled && this.panelMode === 'responsive') {
-				this.setOpen(this.media.matches, false, false);
+				this.setOpen(!compact, false, false);
 			}
 		};
 	}
@@ -154,10 +154,8 @@ export class ConversationView {
 		} else if (this.panelMode === 'closed') {
 			this.setOpen(false, false, false);
 		} else {
-			this.setOpen(this.media.matches, false, false);
-			this.media.addEventListener('change', this.handleViewportChange, {
-				signal: this.context.signal
-			});
+			this.setOpen(!this.isCompactLayout(), false, false);
+			this.unsubscribeLayout = this.context.events.on('layout:changed', this.handleLayoutChange);
 		}
 	}
 
@@ -186,9 +184,9 @@ export class ConversationView {
 		this.panel.hidden = !this.open;
 		this.panel.setAttribute('aria-hidden', this.open ? 'false' : 'true');
 		if (this.backdrop) {
-			this.backdrop.hidden = !this.open || this.media.matches;
+			this.backdrop.hidden = !this.open || !this.isCompactLayout();
 		}
-		this.setBackgroundInert(this.open && !this.media.matches);
+		this.setBackgroundInert(this.open && this.isCompactLayout());
 		if (this.toggleButton) {
 			this.toggleButton.setAttribute('aria-expanded', this.open ? 'true' : 'false');
 		}
@@ -209,8 +207,12 @@ export class ConversationView {
 		});
 	}
 
+	isCompactLayout() {
+		return this.context.chatbot.isCompactLayout();
+	}
+
 	trapMobileFocus(event) {
-		if (event.key !== 'Tab' || !this.open || this.media.matches) {
+		if (event.key !== 'Tab' || !this.open || !this.isCompactLayout()) {
 			return;
 		}
 
@@ -306,12 +308,12 @@ export class ConversationView {
 		const actions = document.createElement('div');
 		actions.className = 'base3-chatbot-conversation-actions';
 		const edit = createButton(
-			this.strings.renameConversation || 'Rename chat',
+			this.strings.renameConversation || this.context.getString('renameConversation'),
 			'base3-chatbot-conversation-action',
 			this.icons.edit
 		);
 		const remove = createButton(
-			this.strings.deleteConversation || 'Delete chat',
+			this.strings.deleteConversation || this.context.getString('deleteConversation'),
 			'base3-chatbot-conversation-action',
 			this.icons.delete
 		);
@@ -340,7 +342,7 @@ export class ConversationView {
 		const label = document.createElement('label');
 		label.className = 'base3-chatbot-visually-hidden';
 		label.htmlFor = `${this.context.chatbot.instanceId}-conversation-title-${conversation.id}`;
-		label.textContent = this.strings.titleLabel || 'Conversation title';
+		label.textContent = this.strings.titleLabel || this.context.getString('titleLabel');
 		const input = document.createElement('input');
 		input.id = label.htmlFor;
 		input.type = 'text';
@@ -349,13 +351,13 @@ export class ConversationView {
 		input.maxLength = 255;
 		input.required = true;
 		const save = createButton(
-			this.strings.saveTitle || 'Save title',
+			this.strings.saveTitle || this.context.getString('saveTitle'),
 			'base3-chatbot-conversation-action',
 			this.icons.save
 		);
 		save.type = 'submit';
 		const cancel = createButton(
-			this.strings.cancel || 'Cancel',
+			this.strings.cancel || this.context.getString('cancel'),
 			'base3-chatbot-conversation-action',
 			this.icons.close
 		);
@@ -421,6 +423,10 @@ export class ConversationView {
 	}
 
 	destroy() {
+		if (this.unsubscribeLayout) {
+			this.unsubscribeLayout();
+			this.unsubscribeLayout = null;
+		}
 		if (this.dialog?.open) {
 			this.dialog.close();
 		}
