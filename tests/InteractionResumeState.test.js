@@ -144,7 +144,17 @@ test('hydrated conversation state restores the existing pending interaction UI',
 	};
 	const context = {
 		chatbot,
-		getString: (key) => key,
+		getString: (key, replacements = {}) => {
+			const strings = {
+				interactionRequired: 'Confirmation required',
+				riskLevel: 'Risk level: {level}',
+				riskMedium: 'Medium'
+			};
+			return Object.entries(replacements).reduce(
+				(text, [name, value]) => text.split('{' + name + '}').join(String(value)),
+				strings[key] || key
+			);
+		},
 		signal: new AbortController().signal,
 		events: {
 			on(name, listener) {
@@ -160,6 +170,7 @@ test('hydrated conversation state restores the existing pending interaction UI',
 			id: 'request-a',
 			kind: 'approval',
 			title: 'Confirm action',
+			risk: 'medium',
 			message: 'Apply the change.'
 		}]
 	};
@@ -176,8 +187,93 @@ test('hydrated conversation state restores the existing pending interaction UI',
 		assert.equal(content.children.length, 1);
 		assert.equal(content.children[0].className, 'base3-chatbot-interaction');
 		assert.equal(content.children[0].children[0].className, 'base3-chatbot-interaction-card');
+		assert.equal(content.children[0].children[0].children[1].textContent, 'Risk level: Medium');
 	}
 	finally {
+		AgentInteractionPlugin.destroy(context);
+		globalThis.document = originalDocument;
+	}
+});
+
+test('chat switching clears foreign HITL state and restores the complete pending request set when returning', () => {
+	const originalDocument = globalThis.document;
+	globalThis.document = {
+		createElement(tagName) {
+			return new InteractionElement(tagName);
+		}
+	};
+	const listeners = new Map();
+	const assistants = [];
+	const chatbot = {
+		pendingInteraction: null,
+		elements: { messages: new InteractionElement('div') },
+		root: new InteractionElement('section'),
+		createAssistantMessage() {
+			const assistant = {
+				content: new InteractionElement('div'),
+				completed: false
+			};
+			assistants.push(assistant);
+			return assistant;
+		},
+		hideThinking() {},
+		showAssistant() {},
+		resumeInteraction() {}
+	};
+	const context = {
+		chatbot,
+		getString: (key) => key,
+		signal: new AbortController().signal,
+		events: {
+			on(name, listener) {
+				listeners.set(name, listener);
+				return () => listeners.delete(name);
+			}
+		}
+	};
+	const pending = {
+		status: 'awaiting_approval',
+		resume_handle: 'scope.multi',
+		interaction_requests: [
+			{
+				id: 'request-a',
+				kind: 'approval',
+				title: 'Enable plugin',
+				message: 'Enable ReadSpeaker.'
+			},
+			{
+				id: 'request-b',
+				kind: 'approval',
+				title: 'Update language',
+				message: 'Update Polish language support.'
+			}
+		]
+	};
+
+	try {
+		AgentInteractionPlugin.install(context);
+		const applyState = listeners.get('conversation:state-applied');
+
+		applyState({ state: { pending_interaction: pending }, hydrated: true });
+		assert.equal(chatbot.pendingInteraction.resume_handle, 'scope.multi');
+		assert.equal(chatbot.pendingInteraction.interaction_requests.length, 2);
+		assert.equal(assistants.length, 1);
+		assert.equal(assistants[0].content.children[0].children.length, 3);
+		assert.equal(assistants[0].content.children[0].children[0].children[0].textContent, 'Enable plugin');
+		assert.equal(assistants[0].content.children[0].children[1].children[0].textContent, 'Update language');
+
+		applyState({ state: { pending_interaction: null }, hydrated: true });
+		assert.equal(chatbot.pendingInteraction, null);
+		assert.equal(assistants.length, 1);
+
+		applyState({ state: { pending_interaction: pending }, hydrated: true });
+		assert.equal(chatbot.pendingInteraction.resume_handle, 'scope.multi');
+		assert.equal(chatbot.pendingInteraction.interaction_requests.length, 2);
+		assert.equal(assistants.length, 2);
+		assert.equal(assistants[1].content.children[0].children.length, 3);
+		assert.equal(assistants[1].content.children[0].children[0].children[0].textContent, 'Enable plugin');
+		assert.equal(assistants[1].content.children[0].children[1].children[0].textContent, 'Update language');
+	} finally {
 		AgentInteractionPlugin.destroy(context);
 		globalThis.document = originalDocument;
 	}

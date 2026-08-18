@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { formatMessageTimestamp } from '../src/Chatbot.js';
+import { Chatbot, formatMessageTimestamp } from '../src/Chatbot.js';
 import { ChatbotEventBus } from '../src/core/ChatbotEventBus.js';
 import { MessageActionsPlugin } from '../src/plugins/MessageActionsPlugin.js';
 
@@ -14,6 +14,69 @@ test('formats message timestamps as time, yesterday, or date without seconds', (
 	assert.equal(formatMessageTimestamp(sameDay, now, 'de-DE'), '09:05');
 	assert.match(formatMessageTimestamp(yesterday, now, 'de-DE'), /^gestern, 20:15$/i);
 	assert.match(formatMessageTimestamp(older, now, 'de-DE'), /^16\.08\.2026, 20:15$/);
+});
+
+
+test('treats an unresolved layout width as compact until a real width is available', () => {
+	const previousWindow = globalThis.window;
+	const previousDocument = globalThis.document;
+	let width = 0;
+	const classes = new Set();
+	const events = [];
+	globalThis.window = {
+		getComputedStyle() {
+			return { fontSize: '16px' };
+		}
+	};
+	globalThis.document = {
+		documentElement: {}
+	};
+
+	try {
+		const chatbot = {
+			root: {
+				clientWidth: 0,
+				getBoundingClientRect() {
+					return { width };
+				},
+				classList: {
+					toggle(name, enabled) {
+						if (enabled) {
+							classes.add(name);
+						} else {
+							classes.delete(name);
+						}
+					}
+				}
+			},
+			compactLayout: false,
+			events: {
+				emit(name, payload) {
+					events.push({ name, payload });
+				}
+			}
+		};
+
+		Chatbot.prototype.updateLayoutMode.call(chatbot);
+		assert.equal(chatbot.compactLayout, true);
+		assert.equal(classes.has('is-compact-layout'), true);
+		assert.deepEqual(events.at(-1), {
+			name: 'layout:changed',
+			payload: { compact: true, width: 0 }
+		});
+
+		width = 1200;
+		Chatbot.prototype.updateLayoutMode.call(chatbot);
+		assert.equal(chatbot.compactLayout, false);
+		assert.equal(classes.has('is-compact-layout'), false);
+		assert.deepEqual(events.at(-1), {
+			name: 'layout:changed',
+			payload: { compact: false, width: 1200 }
+		});
+	} finally {
+		globalThis.window = previousWindow;
+		globalThis.document = previousDocument;
+	}
 });
 
 test('does not add message actions to the initial assistant message', () => {

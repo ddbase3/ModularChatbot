@@ -154,8 +154,10 @@ export class ConversationView {
 		} else if (this.panelMode === 'closed') {
 			this.setOpen(false, false, false);
 		} else {
-			this.setOpen(!this.isCompactLayout(), false, false);
+			this.setOpen(false, false, false);
 			this.unsubscribeLayout = this.context.events.on('layout:changed', this.handleLayoutChange);
+			this.context.chatbot.updateLayoutMode();
+			this.setOpen(!this.isCompactLayout(), false, false);
 		}
 	}
 

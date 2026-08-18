@@ -19,6 +19,7 @@ function createChatbot() {
 		},
 		getConversationId: () => 'conversation',
 		getActiveAssistant: () => null,
+		getString: (key) => key,
 		isSending: () => false,
 		send() {},
 		setConversation() {},
@@ -107,6 +108,14 @@ test('plugin context exposes the opening-message contract used by conversation p
 	assert.equal('setBasePrompt' in context, false);
 });
 
+
+test('plugin context exposes localized strings through the chatbot contract', () => {
+	const manager = new ChatbotPluginManager(createChatbot());
+	const context = manager.createContext('agent-interaction');
+
+	assert.equal(typeof context.getString, 'function');
+	assert.equal(context.getString('interactionRequired'), 'interactionRequired');
+});
 
 test('plugin manager awaits request preparation in installation order', async () => {
 	const manager = new ChatbotPluginManager(createChatbot());

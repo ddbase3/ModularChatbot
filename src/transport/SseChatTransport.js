@@ -53,7 +53,7 @@ export class SseChatTransport {
 
 			const dispatch = (eventName, rawValue) => {
 				const result = onEvent(eventName, this.parseData(rawValue));
-				if (result?.close || eventName === 'done' || eventName === 'error') {
+				if (result?.close) {
 					this.close();
 				}
 			};

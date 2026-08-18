@@ -171,3 +171,59 @@ test('shimmer agent activity keeps the existing thinking element visible', () =>
 		'scrollToBottom'
 	]);
 });
+
+test('agent activity keeps a suspended review stage out of completed state', () => {
+	let activity = null;
+	const renderer = {
+		createState() {
+			return {};
+		},
+		setTurnId() {},
+		update(state, value) {
+			activity = value;
+		},
+		onToken() {},
+		complete() {}
+	};
+	const harness = createHarness(renderer);
+
+	harness.plugin.onTransportEvent(
+		harness.context,
+		'stage.finished',
+		{
+			stage_id: 'action-review',
+			label: 'Action review',
+			status: 'completed',
+			phase_before: 'review',
+			phase_after: 'awaiting-approval'
+		},
+		{ assistant: harness.assistant }
+	);
+
+	assert.equal(activity.status, 'awaiting_approval');
+	assert.equal(activity.description, 'agentAwaitingApproval');
+});
+
+test('agent activity does not finalize the activity renderer when the message suspends for interaction', () => {
+	const calls = [];
+	const renderer = {
+		createState() {
+			return {};
+		},
+		setTurnId() {},
+		update() {},
+		onToken() {},
+		complete() {
+			calls.push('complete');
+		}
+	};
+	const harness = createHarness(renderer);
+	harness.assistant.activityState = { id: 'state' };
+
+	harness.events.emit('message:completed', {
+		...harness.assistant,
+		interaction: true
+	});
+
+	assert.deepEqual(calls, []);
+});

@@ -1,5 +1,5 @@
 import { DetailedAgentActivityRenderer } from './agent-activity/DetailedAgentActivityRenderer.js?build=agent-activity-renderers-1';
-import { ShimmerAgentActivityRenderer } from './agent-activity/ShimmerAgentActivityRenderer.js?build=agent-activity-renderers-2';
+import { ShimmerAgentActivityRenderer } from './agent-activity/ShimmerAgentActivityRenderer.js?build=hitl-terminal-state-1';
 
 const activityEvents = [
 	'stage.started',
@@ -29,6 +29,17 @@ function resolveStatus(eventName, payload) {
 	if (eventName.endsWith('.error') || eventName.endsWith('.failed') || payload.status === 'failed') {
 		return 'failed';
 	}
+
+	const phase = String(payload.phase_after || payload.phase || '')
+		.trim()
+		.toLowerCase()
+		.replaceAll('_', '-');
+	if (phase === 'awaiting-approval') {
+		return 'awaiting_approval';
+	}
+	if (phase === 'awaiting-input') {
+		return 'awaiting_input';
+	}
 	if (eventName.endsWith('.finished')) {
 		return 'completed';
 	}
@@ -45,6 +56,12 @@ function resolveLabel(eventName, payload, context) {
 function resolveDescription(eventName, payload, status, context) {
 	if (status === 'failed') {
 		return String(payload.error || payload.message || context.getString('agentFailed'));
+	}
+	if (status === 'awaiting_approval') {
+		return context.getString('agentAwaitingApproval');
+	}
+	if (status === 'awaiting_input') {
+		return context.getString('agentAwaitingInput');
 	}
 
 	const description = String(payload.description || '').trim();
@@ -121,6 +138,10 @@ export function createAgentActivityPlugin(renderer) {
 			});
 
 			context.events.on('message:completed', (message) => {
+				if (message?.interaction === true) {
+					return;
+				}
+
 				const state = message?.activityState;
 				if (state) {
 					renderer.complete(state, { error: false }, context);

@@ -1,4 +1,11 @@
 function stageText(activity, context) {
+	if (activity.status === 'awaiting_approval') {
+		return context.getString('agentAwaitingApproval');
+	}
+	if (activity.status === 'awaiting_input') {
+		return context.getString('agentAwaitingInput');
+	}
+
 	const source = `${activity.label} ${activity.description}`.toLowerCase();
 
 	if (/final|output|response|answer|compose/.test(source)) {

@@ -1,4 +1,4 @@
-import { Chatbot } from './Chatbot.js?build=contextual-opening-loading-1';
+import { Chatbot } from './Chatbot.js?build=hitl-context-cache-1';
 
 const mountedChatbots = new WeakMap();
 
@@ -34,21 +34,21 @@ export function unmountChatbot(root) {
 	mountedChatbots.delete(root);
 }
 
-export { Chatbot } from './Chatbot.js?build=contextual-opening-loading-1';
+export { Chatbot } from './Chatbot.js?build=hitl-context-cache-1';
 export { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=conversation-draft-1';
 export { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
-export { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=response-extensions-1';
+export { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=plugin-context-i18n-1';
 export { ChatbotUiRegistry } from './core/ChatbotUiRegistry.js?build=conversation-draft-1';
 export { RestChatTransport } from './transport/RestChatTransport.js?build=conversation-draft-1';
-export { SseChatTransport } from './transport/SseChatTransport.js?build=conversation-draft-1';
+export { SseChatTransport } from './transport/SseChatTransport.js?build=hitl-terminal-state-1';
 export { ConversationApi, normalizeConversationState } from './conversation/ConversationApi.js?build=conversation-draft-1';
-export { ConversationView } from './conversation/ConversationView.js?build=layout-icons-2';
-export { AgentActivityPlugin, DetailedAgentActivityPlugin, ShimmerAgentActivityPlugin, createAgentActivityPlugin } from './plugins/AgentActivityPlugin.js?build=thinking-persist-1';
+export { ConversationView } from './conversation/ConversationView.js?build=responsive-panel-initial-2';
+export { AgentActivityPlugin, DetailedAgentActivityPlugin, ShimmerAgentActivityPlugin, createAgentActivityPlugin } from './plugins/AgentActivityPlugin.js?build=hitl-terminal-state-1';
 export { DetailedAgentActivityRenderer } from './plugins/agent-activity/DetailedAgentActivityRenderer.js?build=agent-activity-renderers-1';
-export { ShimmerAgentActivityRenderer } from './plugins/agent-activity/ShimmerAgentActivityRenderer.js?build=agent-activity-renderers-1';
-export { AgentInteractionPlugin } from './plugins/AgentInteractionPlugin.js?build=user-time-thinking-layout-1';
+export { ShimmerAgentActivityRenderer } from './plugins/agent-activity/ShimmerAgentActivityRenderer.js?build=hitl-terminal-state-1';
+export { AgentInteractionPlugin } from './plugins/AgentInteractionPlugin.js?build=hitl-terminal-state-1';
 export { CanvasPlugin } from './plugins/CanvasPlugin.js?build=conversation-draft-1';
-export { ConversationPlugin } from './plugins/ConversationPlugin.js?build=title-after-user-1';
+export { ConversationPlugin } from './plugins/ConversationPlugin.js?build=responsive-panel-initial-2';
 export { MarkdownPlugin } from './plugins/MarkdownPlugin.js?build=extension-pending-text-2';
 export { MessageActionsPlugin } from './plugins/MessageActionsPlugin.js?build=initial-no-actions-1';
 export { ReferencePlugin } from './plugins/ReferencePlugin.js?build=conversation-draft-1';

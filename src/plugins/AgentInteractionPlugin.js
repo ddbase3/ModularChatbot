@@ -31,6 +31,22 @@ function formatValue(context, value) {
 	return String(value);
 }
 
+function formatRisk(context, value) {
+	const risk = String(value || '').trim();
+	if (!risk) {
+		return '';
+	}
+
+	const labels = {
+		low: 'riskLow',
+		medium: 'riskMedium',
+		high: 'riskHigh'
+	};
+	const key = labels[risk.toLowerCase()];
+	const level = key ? context.getString(key) : risk;
+	return context.getString('riskLevel', { level });
+}
+
 function renderInteraction(context, assistant, interaction) {
 	context.chatbot.showAssistant(assistant);
 	assistant.content.replaceChildren();
@@ -50,7 +66,7 @@ function renderInteraction(context, assistant, interaction) {
 		if (request.risk) {
 			const risk = document.createElement('p');
 			risk.className = 'base3-chatbot-interaction-risk';
-			risk.textContent = String(request.risk);
+			risk.textContent = formatRisk(context, request.risk);
 			card.appendChild(risk);
 		}
 		if (request.message) {
@@ -121,7 +137,9 @@ export const AgentInteractionPlugin = {
 			if (!hydrated) {
 				return;
 			}
+
 			const interaction = normalizeInteraction(state?.pending_interaction);
+			context.chatbot.pendingInteraction = interaction;
 			if (interaction) {
 				restoreInteraction(context, interaction);
 			}

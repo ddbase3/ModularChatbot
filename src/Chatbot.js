@@ -1,9 +1,9 @@
 import { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=conversation-draft-1';
 import { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
-import { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=response-extensions-1';
+import { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=plugin-context-i18n-1';
 import { ChatbotUiRegistry } from './core/ChatbotUiRegistry.js?build=conversation-draft-1';
 import { RestChatTransport } from './transport/RestChatTransport.js?build=conversation-draft-1';
-import { SseChatTransport } from './transport/SseChatTransport.js?build=conversation-draft-1';
+import { SseChatTransport } from './transport/SseChatTransport.js?build=hitl-terminal-state-1';
 import { createElement, resolveElement, scrollElementToBottom } from './utils/dom.js?build=conversation-draft-1';
 
 const defaultStrings = {
@@ -12,6 +12,10 @@ const defaultStrings = {
 	technicalDetails: 'Technical details',
 	thinking: 'Preparing response',
 	interactionRequired: 'Confirmation required',
+	riskLevel: 'Risk level: {level}',
+	riskLow: 'Low',
+	riskMedium: 'Medium',
+	riskHigh: 'High',
 	approve: 'Approve',
 	deny: 'Cancel',
 	yesLabel: 'Yes',
@@ -21,6 +25,8 @@ const defaultStrings = {
 	agentFailed: 'failed',
 	agentCompleted: 'completed',
 	agentRunning: 'running',
+	agentAwaitingApproval: 'Awaiting approval',
+	agentAwaitingInput: 'Awaiting input',
 	agentCached: 'cached',
 	agentActivity: 'Agent activity',
 	agentSteps: 'Work steps',
@@ -288,7 +294,7 @@ export class Chatbot {
 	updateLayoutMode() {
 		const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
 		const width = Math.ceil(this.root.getBoundingClientRect().width || this.root.clientWidth || 0);
-		const compact = width > 0 && width <= (50 * rootFontSize);
+		const compact = width <= (50 * rootFontSize);
 		const changed = compact !== this.compactLayout;
 
 		this.compactLayout = compact;

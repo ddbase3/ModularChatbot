@@ -251,6 +251,7 @@ test('conversation controls remain usable when initial history loading fails', a
 		announce() {},
 		showConversationLoading() { loadingCalls += 1; },
 		instanceId: 'chatbot-test',
+		updateLayoutMode() {},
 		isCompactLayout: () => false
 	};
 	const context = {

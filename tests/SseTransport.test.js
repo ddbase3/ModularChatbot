@@ -84,3 +84,55 @@ test('SSE transport always subscribes to core protocol events', async () => {
 		globalThis.EventSource = originalEventSource;
 	}
 });
+
+test('SSE transport does not treat a done event as terminal without an explicit close decision', async () => {
+	const originalFetch = globalThis.fetch;
+	const originalEventSource = globalThis.EventSource;
+	globalThis.fetch = async () => ({
+		ok: true,
+		async json() {
+			return { ok: true, stream: '/stream/turn-2' };
+		}
+	});
+	globalThis.EventSource = EventSourceMock;
+	EventSourceMock.instances = [];
+
+	try {
+		const events = [];
+		const transport = new SseChatTransport({
+			prepareUrl: '/prepare',
+			service: 'chatbot'
+		});
+		const sending = transport.send({
+			payload: { prompt: 'Change something' },
+			events: ['agent.interaction.required'],
+			onEvent: (eventName, payload) => {
+				events.push([eventName, payload]);
+				return eventName === 'agent.interaction.required' ? { close: true } : {};
+			}
+		});
+
+		await new Promise((resolve) => setImmediate(resolve));
+		const source = EventSourceMock.instances[0];
+		assert.ok(source);
+
+		source.emit('done', { status: 'awaiting_approval' });
+		assert.equal(source.closed, false);
+
+		source.emit('agent.interaction.required', {
+			status: 'awaiting_approval',
+			resume_handle: 'resume-2',
+			interaction_requests: [{ id: 'request-1', kind: 'approval' }]
+		});
+		await sending;
+
+		assert.equal(source.closed, true);
+		assert.deepEqual(events.map(([name]) => name), [
+			'done',
+			'agent.interaction.required'
+		]);
+	} finally {
+		globalThis.fetch = originalFetch;
+		globalThis.EventSource = originalEventSource;
+	}
+});

@@ -41,6 +41,75 @@ test('resolveConversationTitle falls back to the visible list label', () => {
 	assert.equal(resolveConversationTitle({ title: '' }, trigger), 'Visible chat title');
 });
 
+test('responsive panel refreshes layout before deciding its initial visibility', () => {
+	let compact = false;
+	let layoutHandler = null;
+	const openClasses = new Set();
+	const panel = {
+		hidden: true,
+		setAttribute() {}
+	};
+	const list = {};
+	const root = {
+		querySelector(selector) {
+			if (selector === '[data-chatbot-conversation-panel]') {
+				return panel;
+			}
+			if (selector === '[data-chatbot-conversation-list]') {
+				return list;
+			}
+			return null;
+		},
+		classList: {
+			add(name) {
+				openClasses.add(name);
+			},
+			toggle(name, enabled) {
+				if (enabled) {
+					openClasses.add(name);
+				} else {
+					openClasses.delete(name);
+				}
+			}
+		}
+	};
+	const context = {
+		root,
+		chatbot: {
+			updateLayoutMode() {
+				compact = true;
+			},
+			isCompactLayout() {
+				return compact;
+			}
+		},
+		events: {
+			on(name, handler) {
+				assert.equal(name, 'layout:changed');
+				layoutHandler = handler;
+				return () => {};
+			}
+		},
+		signal: new AbortController().signal
+	};
+	const view = new ConversationView(context, {
+		multiple: true,
+		panelMode: 'responsive'
+	});
+
+	view.enable();
+
+	assert.equal(panel.hidden, true);
+	assert.equal(openClasses.has('is-conversation-panel-open'), false);
+	assert.equal(typeof layoutHandler, 'function');
+
+	compact = false;
+	layoutHandler({ compact: false });
+
+	assert.equal(panel.hidden, false);
+	assert.equal(openClasses.has('is-conversation-panel-open'), true);
+});
+
 test('delete control opens the dialog with the rendered chat title', () => {
 	class FakeElement {
 		constructor(tagName = 'div') {
