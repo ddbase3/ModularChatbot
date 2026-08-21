@@ -7,6 +7,7 @@ import {
 	ShimmerAgentActivityPlugin,
 	createAgentActivityPlugin
 } from '../src/plugins/AgentActivityPlugin.js';
+import { ShimmerAgentActivityRenderer } from '../src/plugins/agent-activity/ShimmerAgentActivityRenderer.js';
 
 function createHarness(renderer) {
 	const calls = [];
@@ -20,6 +21,9 @@ function createHarness(renderer) {
 		chatbot: {
 			hideThinking(value) {
 				calls.push(['hideThinking', value]);
+			},
+			resetActiveAssistantTextBuffer() {
+				calls.push(['resetActiveAssistantTextBuffer']);
 			},
 			scrollToBottom() {
 				calls.push(['scrollToBottom']);
@@ -117,6 +121,32 @@ test('agent activity plugin normalizes tool activity once before rendering', () 
 	]);
 });
 
+test('agent activity resets streamed progress only after terminal tool events', () => {
+	const renderer = {
+		name: 'shimmer',
+		createState() {
+			return {};
+		},
+		setTurnId() {},
+		update() {},
+		onToken() {},
+		complete() {}
+	};
+
+	for (const eventName of ['tool.started', 'tool.finished', 'tool.error', 'tool.failed']) {
+		const harness = createHarness(renderer);
+		harness.plugin.onTransportEvent(
+			harness.context,
+			eventName,
+			{ call_id: 'call-1', tool: 'search' },
+			{ assistant: harness.assistant }
+		);
+
+		const resetCalls = harness.calls.filter(([name]) => name === 'resetActiveAssistantTextBuffer');
+		assert.equal(resetCalls.length, eventName === 'tool.started' ? 0 : 1);
+	}
+});
+
 test('agent activity lifecycle is delegated to the selected renderer', () => {
 	const calls = [];
 	const renderer = {
@@ -170,6 +200,133 @@ test('shimmer agent activity keeps the existing thinking element visible', () =>
 	assert.deepEqual(harness.calls.map(([name]) => name), [
 		'scrollToBottom'
 	]);
+});
+
+test('shimmer agent activity created after streamed text starts below the assistant message', () => {
+	const previousDocument = globalThis.document;
+	const inserted = [];
+	const activityChildren = [];
+
+	function createElement() {
+		return {
+			isConnected: false,
+			children: [],
+			classList: {
+				add() {},
+				remove() {}
+			},
+			setAttribute() {},
+			querySelector() {
+				return null;
+			},
+			appendChild(child) {
+				child.isConnected = this.isConnected;
+				this.children.push(child);
+			},
+			remove() {
+				this.isConnected = false;
+			}
+		};
+	}
+
+	globalThis.document = {
+		createElement
+	};
+
+	try {
+		const assistant = {
+			thinking: { isConnected: false },
+			element: {
+				isConnected: true,
+				after(element) {
+					element.isConnected = true;
+					inserted.push(element);
+				}
+			},
+			activity: {
+				appendChild(element) {
+					element.isConnected = true;
+					activityChildren.push(element);
+				}
+			}
+		};
+
+		const state = ShimmerAgentActivityRenderer.createState(assistant, {
+			getString: (key) => key
+		});
+
+		assert.deepEqual(inserted, [state.element]);
+		assert.deepEqual(activityChildren, []);
+		assert.equal(assistant.thinking, state.element);
+		assert.equal(state.element.isConnected, true);
+	} finally {
+		globalThis.document = previousDocument;
+	}
+});
+
+test('shimmer agent activity restores the same working indicator below streamed progress', () => {
+	const inserted = [];
+	const anchor = {
+		isConnected: true,
+		after(element) {
+			element.isConnected = true;
+			inserted.push(element);
+		}
+	};
+	const element = {
+		isConnected: false,
+		classList: {
+			remove() {}
+		}
+	};
+	const text = { textContent: '' };
+	const state = {
+		element,
+		text,
+		anchor,
+		turnId: ''
+	};
+
+	ShimmerAgentActivityRenderer.update(state, {
+		kind: 'tool',
+		status: 'running',
+		label: 'search',
+		description: 'Searching'
+	}, {
+		getString: (key) => key
+	});
+
+	assert.deepEqual(inserted, [element]);
+	assert.equal(element.isConnected, true);
+	assert.equal(text.textContent, 'agentRetrievingInformation');
+});
+
+test('shimmer agent activity does not restore itself when final response tokens arrive', () => {
+	const inserted = [];
+	const element = {
+		isConnected: false,
+		classList: {
+			remove() {}
+		}
+	};
+	const state = {
+		element,
+		text: { textContent: '' },
+		anchor: {
+			isConnected: true,
+			after(value) {
+				inserted.push(value);
+			}
+		},
+		turnId: ''
+	};
+
+	ShimmerAgentActivityRenderer.onToken(state, {
+		getString: (key) => key
+	});
+
+	assert.deepEqual(inserted, []);
+	assert.equal(state.text.textContent, 'agentCreatingResponse');
 });
 
 test('agent activity keeps a suspended review stage out of completed state', () => {

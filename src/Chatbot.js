@@ -782,6 +782,20 @@ export class Chatbot {
 		}, 60);
 	}
 
+	resetActiveAssistantTextBuffer() {
+		const assistant = this.activeAssistant;
+		if (!assistant || assistant.completed) {
+			return;
+		}
+
+		if (this.renderTimer) {
+			window.clearTimeout(this.renderTimer);
+			this.renderTimer = null;
+			this.renderAssistant(assistant);
+		}
+		assistant.rawText = '';
+	}
+
 	finishActiveMessage(options = {}) {
 		const assistant = this.activeAssistant;
 		if (!assistant || assistant.completed) {

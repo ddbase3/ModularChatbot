@@ -79,6 +79,38 @@ test('treats an unresolved layout width as compact until a real width is availab
 	}
 });
 
+test('resets streamed assistant text without removing the currently visible progress', () => {
+	const previousWindow = globalThis.window;
+	const clearedTimers = [];
+	const renderedTexts = [];
+	globalThis.window = {
+		clearTimeout(timer) {
+			clearedTimers.push(timer);
+		}
+	};
+
+	try {
+		const chatbot = Object.create(Chatbot.prototype);
+		chatbot.activeAssistant = {
+			rawText: 'Let me fetch the course members.',
+			completed: false
+		};
+		chatbot.renderTimer = 42;
+		chatbot.renderAssistant = (assistant) => {
+			renderedTexts.push(assistant.rawText);
+		};
+
+		chatbot.resetActiveAssistantTextBuffer();
+
+		assert.deepEqual(clearedTimers, [42]);
+		assert.deepEqual(renderedTexts, ['Let me fetch the course members.']);
+		assert.equal(chatbot.renderTimer, null);
+		assert.equal(chatbot.activeAssistant.rawText, '');
+	} finally {
+		globalThis.window = previousWindow;
+	}
+});
+
 test('does not add message actions to the initial assistant message', () => {
 	const events = new ChatbotEventBus();
 	MessageActionsPlugin.install({ events });

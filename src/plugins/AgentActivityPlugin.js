@@ -1,5 +1,5 @@
 import { DetailedAgentActivityRenderer } from './agent-activity/DetailedAgentActivityRenderer.js?build=agent-activity-renderers-1';
-import { ShimmerAgentActivityRenderer } from './agent-activity/ShimmerAgentActivityRenderer.js?build=hitl-terminal-state-1';
+import { ShimmerAgentActivityRenderer } from './agent-activity/ShimmerAgentActivityRenderer.js?build=tool-activity-reentry-3';
 
 const activityEvents = [
 	'stage.started',
@@ -178,6 +178,9 @@ export function createAgentActivityPlugin(renderer) {
 				return true;
 			}
 
+			if (eventName === 'tool.finished' || eventName === 'tool.error' || eventName === 'tool.failed') {
+				context.chatbot.resetActiveAssistantTextBuffer();
+			}
 			if (!preservesThinking(renderer)) {
 				context.chatbot.hideThinking(assistant);
 			}

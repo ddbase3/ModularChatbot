@@ -1,4 +1,4 @@
-import { Chatbot } from './Chatbot.js?build=hitl-context-cache-1';
+import { Chatbot } from './Chatbot.js?build=tool-progress-reset-1';
 
 const mountedChatbots = new WeakMap();
 
@@ -34,7 +34,7 @@ export function unmountChatbot(root) {
 	mountedChatbots.delete(root);
 }
 
-export { Chatbot } from './Chatbot.js?build=hitl-context-cache-1';
+export { Chatbot } from './Chatbot.js?build=tool-progress-reset-1';
 export { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=conversation-draft-1';
 export { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
 export { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=plugin-context-i18n-1';
@@ -43,9 +43,9 @@ export { RestChatTransport } from './transport/RestChatTransport.js?build=conver
 export { SseChatTransport } from './transport/SseChatTransport.js?build=hitl-terminal-state-1';
 export { ConversationApi, normalizeConversationState } from './conversation/ConversationApi.js?build=conversation-draft-1';
 export { ConversationView } from './conversation/ConversationView.js?build=responsive-panel-initial-2';
-export { AgentActivityPlugin, DetailedAgentActivityPlugin, ShimmerAgentActivityPlugin, createAgentActivityPlugin } from './plugins/AgentActivityPlugin.js?build=hitl-terminal-state-1';
+export { AgentActivityPlugin, DetailedAgentActivityPlugin, ShimmerAgentActivityPlugin, createAgentActivityPlugin } from './plugins/AgentActivityPlugin.js?build=tool-activity-reentry-3';
 export { DetailedAgentActivityRenderer } from './plugins/agent-activity/DetailedAgentActivityRenderer.js?build=agent-activity-renderers-1';
-export { ShimmerAgentActivityRenderer } from './plugins/agent-activity/ShimmerAgentActivityRenderer.js?build=hitl-terminal-state-1';
+export { ShimmerAgentActivityRenderer } from './plugins/agent-activity/ShimmerAgentActivityRenderer.js?build=tool-activity-reentry-3';
 export { AgentInteractionPlugin } from './plugins/AgentInteractionPlugin.js?build=hitl-terminal-state-1';
 export { CanvasPlugin } from './plugins/CanvasPlugin.js?build=conversation-draft-1';
 export { ConversationPlugin } from './plugins/ConversationPlugin.js?build=responsive-panel-initial-2';

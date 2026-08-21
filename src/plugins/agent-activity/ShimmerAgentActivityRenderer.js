@@ -47,6 +47,14 @@ function setText(state, text) {
 	state.element.classList.remove('is-leaving');
 }
 
+function show(state) {
+	if (state.element.isConnected || !state.anchor?.isConnected) {
+		return;
+	}
+
+	state.anchor.after(state.element);
+}
+
 export const ShimmerAgentActivityRenderer = {
 	name: 'shimmer',
 
@@ -79,12 +87,18 @@ export const ShimmerAgentActivityRenderer = {
 		element.appendChild(text);
 
 		if (!thinking) {
-			assistant.activity.appendChild(element);
+			if (assistant.element?.isConnected) {
+				assistant.element.after(element);
+			} else {
+				assistant.activity.appendChild(element);
+			}
+			assistant.thinking = element;
 		}
 
 		return {
 			element,
 			text,
+			anchor: assistant.element,
 			turnId: ''
 		};
 	},
@@ -94,6 +108,7 @@ export const ShimmerAgentActivityRenderer = {
 	},
 
 	update(state, activity, context) {
+		show(state);
 		setText(state, resolveText(activity, context));
 	},
 
