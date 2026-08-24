@@ -186,7 +186,7 @@ class FakeDocument {
 	}
 }
 
-function render(text) {
+function render(text, assistant = null) {
 	const previousElement = globalThis.Element;
 	const element = new FakeElement();
 	globalThis.Element = FakeElement;
@@ -199,7 +199,8 @@ function render(text) {
 			}
 		}, {
 			element,
-			text
+			text,
+			assistant
 		});
 
 		assert.equal(handled, true);
@@ -216,6 +217,16 @@ test('markdown plugin renders ordinary markdown without extension-specific branc
 	assert.match(html, /<h2>Result<\/h2>/);
 	assert.match(html, /<li>First<\/li>/);
 	assert.match(html, /<li>Second<\/li>/);
+});
+
+test('markdown plugin renders line breaks in the initial assistant message', () => {
+	const html = render('First line\nSecond line', {
+		element: {
+			classList: new FakeClassList(['base3-chatbot-initial-message'])
+		}
+	});
+
+	assert.match(html, /First line<br>Second line/);
 });
 
 test('markdown plugin pretty prints json code blocks after rendering', () => {

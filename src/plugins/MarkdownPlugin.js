@@ -112,23 +112,23 @@ function preservePendingExtensionBlocks(currentContainer, nextContainer) {
 	});
 }
 
-function renderStreamingMarkdown(context, renderContext, marked, loadingText) {
+function renderStreamingMarkdown(context, renderContext, marked, loadingText, parseOptions = undefined) {
 	const currentPending = getPendingExtensionBlocks(renderContext.element);
 	if (currentPending.length === 0) {
-		renderContext.element.innerHTML = marked.parse(renderContext.text);
+		renderContext.element.innerHTML = marked.parse(renderContext.text, parseOptions);
 		markExtensionBlocksPending(renderContext.element, loadingText);
 		return;
 	}
 
 	const document = renderContext.element.ownerDocument || context.root?.ownerDocument || globalThis.document;
 	if (!document || typeof document.createElement !== 'function' || typeof renderContext.element.replaceChildren !== 'function') {
-		renderContext.element.innerHTML = marked.parse(renderContext.text);
+		renderContext.element.innerHTML = marked.parse(renderContext.text, parseOptions);
 		markExtensionBlocksPending(renderContext.element, loadingText);
 		return;
 	}
 
 	const nextContainer = document.createElement('div');
-	nextContainer.innerHTML = marked.parse(renderContext.text);
+	nextContainer.innerHTML = marked.parse(renderContext.text, parseOptions);
 	markExtensionBlocksPending(nextContainer, loadingText);
 	preservePendingExtensionBlocks(renderContext.element, nextContainer);
 	renderContext.element.replaceChildren(...Array.from(nextContainer.childNodes));
@@ -181,11 +181,13 @@ export const MarkdownPlugin = {
 			return false;
 		}
 		const options = typeof context.getPluginOptions === 'function' ? context.getPluginOptions() : {};
+		const isInitialAssistant = renderContext.assistant?.element?.classList?.contains('base3-chatbot-initial-message') === true;
 		renderStreamingMarkdown(
 			context,
 			renderContext,
 			marked,
-			options?.strings?.extensionLoading || context.getString('extensionLoading')
+			options?.strings?.extensionLoading || context.getString('extensionLoading'),
+			isInitialAssistant ? { breaks: true } : undefined
 		);
 		formatJsonCodeBlocks(renderContext.element);
 		patchExternalLinks(renderContext.element);

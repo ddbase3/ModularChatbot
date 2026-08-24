@@ -1,4 +1,4 @@
-import { Chatbot } from './Chatbot.js?build=tool-progress-reset-1';
+import { Chatbot } from './Chatbot.js?build=initial-message-multiline-1';
 
 const mountedChatbots = new WeakMap();
 
@@ -34,7 +34,7 @@ export function unmountChatbot(root) {
 	mountedChatbots.delete(root);
 }
 
-export { Chatbot } from './Chatbot.js?build=tool-progress-reset-1';
+export { Chatbot } from './Chatbot.js?build=initial-message-multiline-1';
 export { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=conversation-draft-1';
 export { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
 export { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=plugin-context-i18n-1';
@@ -49,7 +49,7 @@ export { ShimmerAgentActivityRenderer } from './plugins/agent-activity/ShimmerAg
 export { AgentInteractionPlugin } from './plugins/AgentInteractionPlugin.js?build=hitl-terminal-state-1';
 export { CanvasPlugin } from './plugins/CanvasPlugin.js?build=conversation-draft-1';
 export { ConversationPlugin } from './plugins/ConversationPlugin.js?build=responsive-panel-initial-2';
-export { MarkdownPlugin } from './plugins/MarkdownPlugin.js?build=extension-pending-text-2';
+export { MarkdownPlugin } from './plugins/MarkdownPlugin.js?build=initial-message-multiline-1';
 export { MessageActionsPlugin } from './plugins/MessageActionsPlugin.js?build=initial-no-actions-1';
 export { ReferencePlugin } from './plugins/ReferencePlugin.js?build=conversation-draft-1';
 export { SuggestionsPlugin } from './plugins/SuggestionsPlugin.js?build=conversation-draft-1';

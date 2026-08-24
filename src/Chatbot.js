@@ -105,6 +105,26 @@ function createId(prefix) {
 	return `${prefix}-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
 }
 
+function renderTextWithLineBreaks(element, value) {
+	const text = String(value ?? '').replace(/\r\n?/g, '\n');
+	const document = element?.ownerDocument || globalThis.document;
+	if (!element || !document || typeof document.createTextNode !== 'function' || typeof document.createElement !== 'function') {
+		if (element) {
+			element.textContent = text;
+		}
+		return;
+	}
+
+	const nodes = [];
+	text.split('\n').forEach((line, index) => {
+		if (index > 0) {
+			nodes.push(document.createElement('br'));
+		}
+		nodes.push(document.createTextNode(line));
+	});
+	element.replaceChildren(...nodes);
+}
+
 function resolveLocale() {
 	const lang = String(globalThis.document?.documentElement?.lang || globalThis.navigator?.language || '').trim();
 	return lang || undefined;
@@ -1009,7 +1029,11 @@ export class Chatbot {
 			assistant
 		});
 		if (!handled) {
-			assistant.content.textContent = assistant.rawText;
+			if (assistant.element.classList.contains('base3-chatbot-initial-message')) {
+				renderTextWithLineBreaks(assistant.content, assistant.rawText);
+			} else {
+				assistant.content.textContent = assistant.rawText;
+			}
 		}
 		this.events.emit('message:rendered', {
 			...assistant

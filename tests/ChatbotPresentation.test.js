@@ -111,6 +111,51 @@ test('resets streamed assistant text without removing the currently visible prog
 	}
 });
 
+test('renders plain initial assistant text with br elements for line breaks', () => {
+	const document = {
+		createElement(tagName) {
+			return { nodeName: String(tagName).toUpperCase() };
+		},
+		createTextNode(text) {
+			return { nodeName: '#text', textContent: String(text) };
+		}
+	};
+	const content = {
+		ownerDocument: document,
+		children: [],
+		replaceChildren(...children) {
+			this.children = children;
+		}
+	};
+	const chatbot = Object.create(Chatbot.prototype);
+	chatbot.showAssistant = () => {};
+	chatbot.events = { emit() {} };
+	chatbot.pluginManager = { renderMessageContent: () => false };
+	const assistant = {
+		element: {
+			classList: {
+				contains(className) {
+					return className === 'base3-chatbot-initial-message';
+				}
+			}
+		},
+		content,
+		rawText: 'First line\n\nSecond paragraph'
+	};
+
+	chatbot.renderAssistant(assistant);
+
+	assert.deepEqual(content.children.map((node) => node.nodeName), [
+		'#text',
+		'BR',
+		'#text',
+		'BR',
+		'#text'
+	]);
+	assert.equal(content.children[0].textContent, 'First line');
+	assert.equal(content.children[4].textContent, 'Second paragraph');
+});
+
 test('does not add message actions to the initial assistant message', () => {
 	const events = new ChatbotEventBus();
 	MessageActionsPlugin.install({ events });
