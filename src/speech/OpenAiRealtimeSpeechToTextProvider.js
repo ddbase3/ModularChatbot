@@ -1,196 +1,516 @@
-import { Pcm16AudioCapture, pcm16ToBase64 } from './Pcm16AudioCapture.js';
-import {
-	getRealtimeErrorMessage,
-	RealtimeSpeechToTextSocket
-} from './RealtimeSpeechToTextSocket.js';
+import { TranscriptModel } from './TranscriptModel.js';
+
+const SDP_TIMEOUT_MS = 20000;
+const DATA_CHANNEL_TIMEOUT_MS = 12000;
+const STOP_DEADLINE_MS = 10000;
+const COMMIT_DRAIN_MS = 180;
+const TRANSCRIPT_QUIET_MS = 300;
+const LOCAL_VOICE_RMS = 0.012;
+
+class VoiceInputError extends Error {
+	constructor(message, code = 'voice_input_error') {
+		super(message);
+		this.name = 'VoiceInputError';
+		this.code = code;
+	}
+}
+
+function now() {
+	return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function requestFrame(callback) {
+	const request = globalThis.requestAnimationFrame || globalThis.window?.requestAnimationFrame;
+	return request ? request(callback) : globalThis.setTimeout(callback, 16);
+}
+
+function cancelFrame(frame) {
+	const cancel = globalThis.cancelAnimationFrame || globalThis.window?.cancelAnimationFrame;
+	if (cancel) {
+		cancel(frame);
+		return;
+	}
+	globalThis.clearTimeout(frame);
+}
+
+async function fetchWithTimeout(url, options, timeoutMs, timeoutMessage, parentSignal) {
+	const controller = new AbortController();
+	let timedOut = false;
+	const forwardAbort = () => controller.abort(parentSignal?.reason);
+
+	if (parentSignal?.aborted) {
+		forwardAbort();
+	} else {
+		parentSignal?.addEventListener('abort', forwardAbort, { once: true });
+	}
+
+	const timeout = globalThis.setTimeout(() => {
+		timedOut = true;
+		controller.abort();
+	}, timeoutMs);
+
+	try {
+		return await fetch(url, {
+			...options,
+			signal: controller.signal
+		});
+	} catch (error) {
+		if (timedOut) {
+			throw new VoiceInputError(timeoutMessage, 'timeout');
+		}
+		throw error;
+	} finally {
+		globalThis.clearTimeout(timeout);
+		parentSignal?.removeEventListener('abort', forwardAbort);
+	}
+}
+
+function waitForDataChannelOpen(dataChannel, timeoutMs, signal) {
+	if (signal?.aborted) {
+		return Promise.reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+	}
+	if (dataChannel.readyState === 'open') {
+		return Promise.resolve();
+	}
+
+	return new Promise((resolve, reject) => {
+		const cleanup = () => {
+			globalThis.clearTimeout(timeout);
+			dataChannel.removeEventListener('open', handleOpen);
+			dataChannel.removeEventListener('close', handleClose);
+			dataChannel.removeEventListener('error', handleError);
+			signal?.removeEventListener('abort', handleAbort);
+		};
+		const handleOpen = () => {
+			cleanup();
+			resolve();
+		};
+		const handleClose = () => {
+			cleanup();
+			reject(new VoiceInputError('The OpenAI realtime connection closed before it was ready.', 'data_channel_closed'));
+		};
+		const handleError = () => {
+			cleanup();
+			reject(new VoiceInputError('The OpenAI realtime data channel could not be opened.', 'data_channel_error'));
+		};
+		const handleAbort = () => {
+			cleanup();
+			reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+		};
+		const timeout = globalThis.setTimeout(() => {
+			cleanup();
+			reject(new VoiceInputError('The OpenAI realtime data channel did not open in time.', 'data_channel_timeout'));
+		}, timeoutMs);
+
+		dataChannel.addEventListener('open', handleOpen, { once: true });
+		dataChannel.addEventListener('close', handleClose, { once: true });
+		dataChannel.addEventListener('error', handleError, { once: true });
+		signal?.addEventListener('abort', handleAbort, { once: true });
+	});
+}
+
+async function readErrorMessage(response, defaultMessage) {
+	const responseText = await response.text();
+	if (responseText === '') {
+		return defaultMessage;
+	}
+	try {
+		const data = JSON.parse(responseText);
+		const message = data?.error?.message;
+		if (typeof message === 'string' && message.trim() !== '') {
+			return message.trim();
+		}
+	} catch (error) {
+		const normalized = responseText.replace(/\s+/gu, ' ').trim();
+		if (normalized !== '') {
+			return normalized.slice(0, 500);
+		}
+	}
+	return defaultMessage;
+}
 
 export class OpenAiRealtimeSpeechToTextProvider {
 	constructor(options = {}) {
 		this.options = {
 			session: null,
-			autoStop: false,
 			onPartial() {},
 			onFinal() {},
 			onStart() {},
 			onEnd() {},
 			onError() {},
+			onLevel() {},
 			...options
 		};
 		this.session = this.options.session;
-		this.connection = null;
-		this.capture = null;
-		this.committedText = '';
-		this.partialText = '';
+		this.model = null;
+		this.peerConnection = null;
+		this.dataChannel = null;
+		this.captureStream = null;
+		this.rtcTrack = null;
+		this.audioContext = null;
+		this.audioSource = null;
+		this.analyser = null;
+		this.meterFrame = null;
+		this.startController = null;
+		this.stopCheckTimer = null;
+		this.stopDeadlineTimer = null;
+		this.commitTimer = null;
+		this.stopRequested = false;
+		this.stopRequestedAt = 0;
+		this.lastTranscriptEventAt = 0;
+		this.localVoiceDetected = false;
+		this.starting = false;
 		this.recording = false;
-		this.stopping = false;
 		this.finished = false;
-		this.finalizationTimer = null;
-		this.hasUncommittedAudio = false;
+		this.closing = false;
+		this.lastRenderedText = '';
 	}
 
 	async start() {
-		if (this.recording || this.connection) {
+		if (this.starting || this.recording) {
 			return;
 		}
 		if (!this.isSupportedSession(this.session)) {
 			throw new Error('Unsupported OpenAI realtime speech-to-text session.');
 		}
-
+		this.assertBrowserSupport();
 		this.resetState();
-		this.connection = new RealtimeSpeechToTextSocket({
-			providerName: 'OpenAI realtime speech-to-text',
-			endpoint: this.session.endpoint,
-			protocols: [
-				'realtime',
-				`openai-insecure-api-key.${this.session.clientToken}`
-			],
-			handshakeTimeoutMs: Number(this.session.options?.handshakeTimeoutMs || 10000),
-			onMessage: (message) => this.handleMessage(message),
-			onError: (error) => this.fail(error),
-			onClose: (event) => this.handleClose(event)
-		});
+		this.starting = true;
+		this.startController = new AbortController();
 
 		try {
-			await this.connection.open();
+			const stream = this.options.mediaStream;
+			if (!stream) {
+				throw new VoiceInputError('A microphone stream is required.', 'missing_media_stream');
+			}
+			if (this.finished) {
+				this.stopStream(stream);
+				return;
+			}
+
+			this.captureStream = stream;
+			const sourceTrack = stream.getAudioTracks?.()[0];
+			if (!sourceTrack) {
+				throw new VoiceInputError('The browser did not provide a usable microphone track.', 'missing_audio_track');
+			}
+			sourceTrack.addEventListener?.('ended', () => {
+				if (!this.closing && !this.finished) {
+					this.fail(new VoiceInputError('The microphone was disconnected.', 'microphone_ended'));
+				}
+			}, { once: true });
+
+			await this.startMeter(stream);
+			if (this.finished) {
+				return;
+			}
+
+			this.rtcTrack = sourceTrack;
+			if ('contentHint' in this.rtcTrack) {
+				this.rtcTrack.contentHint = 'speech';
+			}
+
+			this.peerConnection = new RTCPeerConnection();
+			this.bindPeerConnection(this.peerConnection);
+			this.peerConnection.addTrack(this.rtcTrack, stream);
+			this.dataChannel = this.peerConnection.createDataChannel('oai-events', { ordered: true });
+			this.bindDataChannel(this.dataChannel);
+
+			const localSdp = await this.createLocalOffer(this.peerConnection);
+			const sdpResponse = await fetchWithTimeout(
+				this.session.endpoint,
+				{
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${this.session.clientToken}`,
+						'Content-Type': 'application/sdp'
+					},
+					body: localSdp,
+					cache: 'no-store',
+					referrerPolicy: 'no-referrer'
+				},
+				Number(this.session.options?.sdpTimeoutMs || SDP_TIMEOUT_MS),
+				'OpenAI did not confirm the WebRTC connection in time.',
+				this.startController.signal
+			);
+			if (!sdpResponse.ok) {
+				throw new VoiceInputError(
+					await readErrorMessage(sdpResponse, 'OpenAI rejected the WebRTC connection.'),
+					'openai_sdp_error'
+				);
+			}
+			const answerSdp = await sdpResponse.text();
+			if (!answerSdp.startsWith('v=0')) {
+				throw new VoiceInputError('OpenAI returned an invalid WebRTC answer.', 'invalid_sdp_answer');
+			}
+			await this.peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+			await waitForDataChannelOpen(
+				this.dataChannel,
+				Number(this.session.options?.dataChannelTimeoutMs || DATA_CHANNEL_TIMEOUT_MS),
+				this.startController.signal
+			);
+			if (this.finished) {
+				return;
+			}
+
+			this.starting = false;
+			this.recording = true;
+			this.options.onStart();
 		} catch (error) {
-			this.cleanupAfterStartFailure();
+			this.starting = false;
+			if (this.finished && (error?.name === 'AbortError' || this.startController?.signal.aborted)) {
+				return;
+			}
+			this.cleanupRuntime();
 			throw error;
 		}
 	}
 
 	stop() {
-		if (this.stopping || this.finished) {
+		if (this.stopRequested || this.finished) {
 			return;
 		}
-
-		this.stopping = true;
-		this.stopCapture(true);
-		if (this.connection?.isOpen() && this.hasUncommittedAudio) {
-			this.connection.send({ type: 'input_audio_buffer.commit' });
-			this.startFinalizationTimer();
+		if (this.starting && this.dataChannel?.readyState !== 'open') {
+			this.finishNormally();
 			return;
 		}
-		this.finishWithCurrentText();
-	}
-
-	destroy() {
-		this.finished = true;
-		this.stopCapture();
-		this.connection?.cancel();
-		this.connection = null;
-		clearTimeout(this.finalizationTimer);
-		this.finalizationTimer = null;
-		this.stopping = false;
-	}
-
-	async handleMessage(message) {
-		if (message.type === 'session.created') {
-			if (this.recording || this.finished) {
-				return;
-			}
-
-			await this.startCapture();
-			this.connection.markReady();
-			return;
-		}
-
-		if (message.type === 'input_audio_buffer.committed') {
-			this.hasUncommittedAudio = false;
-			return;
-		}
-
-		if (message.type === 'conversation.item.input_audio_transcription.delta') {
-			this.partialText += String(message.delta || '');
-			this.options.onPartial(this.joinText(this.committedText, this.partialText));
-			return;
-		}
-
-		if (message.type === 'conversation.item.input_audio_transcription.completed') {
-			const segment = String(message.transcript || this.partialText || '').trim();
-			this.partialText = '';
-			this.committedText = this.joinText(this.committedText, segment);
-			if (this.options.autoStop || this.stopping) {
-				this.finishWithCurrentText();
-			} else if (this.committedText) {
-				this.options.onPartial(this.committedText);
-			}
-			return;
-		}
-
-		if (message.type === 'input_audio_buffer.speech_stopped' && this.options.autoStop) {
-			this.stopping = true;
-			this.stopCapture(false);
-			this.startFinalizationTimer();
-			return;
-		}
-
-		if (message.type === 'error' || message.type === 'conversation.item.input_audio_transcription.failed') {
-			this.fail(new Error(getRealtimeErrorMessage(
-				message,
-				'OpenAI realtime transcription failed.'
-			)));
-		}
-	}
-
-	async startCapture() {
-		this.capture = new Pcm16AudioCapture({
-			sampleRate: Number(this.session.sampleRate),
-			chunkDurationMs: Number(this.session.options?.chunkDurationMs || 100),
-			onChunk: (chunk) => this.sendAudio(chunk)
-		});
-		await this.capture.start();
-		this.recording = true;
-		this.options.onStart();
-	}
-
-	sendAudio(chunk) {
-		if (!chunk.length || !this.connection?.isOpen()) {
-			return;
-		}
-		this.hasUncommittedAudio = true;
-		this.connection.send({
-			type: 'input_audio_buffer.append',
-			audio: pcm16ToBase64(chunk)
-		});
-	}
-
-	stopCapture(flush = true) {
+		this.stopRequested = true;
+		this.stopRequestedAt = now();
 		this.recording = false;
-		this.capture?.stop(flush);
-		this.capture = null;
-	}
-
-	startFinalizationTimer() {
-		clearTimeout(this.finalizationTimer);
-		this.finalizationTimer = setTimeout(
-			() => this.finishWithCurrentText(),
-			Number(this.session.options?.finalizationTimeoutMs || 10000)
+		this.stopMeter();
+		this.stopDeadlineTimer = globalThis.setTimeout(
+			() => this.finishAfterDeadline(),
+			Number(this.session.options?.finalizationTimeoutMs || STOP_DEADLINE_MS)
+		);
+		this.commitTimer = globalThis.setTimeout(
+			() => this.commitCurrentTurn(),
+			Number(this.session.options?.commitDrainMs || COMMIT_DRAIN_MS)
 		);
 	}
 
-	finishWithCurrentText() {
-		const text = this.joinText(this.committedText, this.partialText).trim();
-		if (text) {
-			this.options.onFinal(text);
-		}
-		this.finish();
-	}
-
-	handleClose(event) {
+	destroy() {
 		if (this.finished) {
 			return;
 		}
-		if (this.stopping) {
-			this.finishWithCurrentText();
+		this.finished = true;
+		this.cleanupRuntime();
+	}
+
+	assertBrowserSupport() {
+		if (!this.options.mediaStream) {
+			throw new Error('A microphone stream is required.');
+		}
+		if (!globalThis.RTCPeerConnection) {
+			throw new Error('WebRTC is not available.');
+		}
+		if (!(globalThis.AudioContext || globalThis.webkitAudioContext)) {
+			throw new Error('AudioContext is not available.');
+		}
+	}
+
+	async createLocalOffer(peerConnection) {
+		const offer = await peerConnection.createOffer();
+		await peerConnection.setLocalDescription(offer);
+		const localSdp = peerConnection.localDescription?.sdp;
+		if (typeof localSdp !== 'string' || localSdp === '') {
+			throw new VoiceInputError('The browser could not create a WebRTC offer.', 'missing_local_sdp');
+		}
+		return localSdp;
+	}
+
+	bindPeerConnection(peerConnection) {
+		peerConnection.addEventListener?.('connectionstatechange', () => {
+			if (this.closing || this.finished) {
+				return;
+			}
+			if (peerConnection.connectionState === 'failed') {
+				this.fail(new VoiceInputError('The OpenAI WebRTC connection failed.', 'peer_connection_failed'));
+			}
+		});
+	}
+
+	bindDataChannel(dataChannel) {
+		dataChannel.addEventListener('message', (event) => this.handleRealtimeMessage(event.data));
+		dataChannel.addEventListener('close', () => {
+			if (this.closing || this.finished) {
+				return;
+			}
+			if (this.stopRequested) {
+				this.finishNormally();
+				return;
+			}
+			this.fail(new VoiceInputError('The OpenAI realtime connection closed unexpectedly.', 'data_channel_closed'));
+		});
+		dataChannel.addEventListener('error', () => {
+			if (!this.closing && !this.finished) {
+				this.fail(new VoiceInputError('The OpenAI realtime data channel failed.', 'data_channel_error'));
+			}
+		});
+	}
+
+	handleRealtimeMessage(rawMessage) {
+		if (this.finished || typeof rawMessage !== 'string') {
+			return;
+		}
+		let event;
+		try {
+			event = JSON.parse(rawMessage);
+		} catch (error) {
+			this.fail(new VoiceInputError('OpenAI returned an invalid realtime event.', 'invalid_realtime_event'));
+			return;
+		}
+		if (!event || typeof event.type !== 'string') {
 			return;
 		}
 
-		const code = Number(event?.code || 0);
-		const reason = String(event?.reason || '').trim();
-		const suffix = [code > 0 ? `code ${code}` : '', reason].filter(Boolean).join(': ');
-		this.fail(new Error(
-			`OpenAI realtime speech-to-text connection closed unexpectedly${suffix ? ` (${suffix})` : ''}.`
+		switch (event.type) {
+			case 'input_audio_buffer.committed':
+				this.registerOrderedItem(event.item_id, event);
+				this.maybeFinishStop();
+				break;
+
+			case 'conversation.item.added':
+				this.handleConversationItem(event);
+				break;
+
+			case 'conversation.item.input_audio_transcription.delta':
+				this.handleTranscriptDelta(event);
+				break;
+
+			case 'conversation.item.input_audio_transcription.completed':
+				this.handleTranscriptCompleted(event);
+				break;
+
+			case 'conversation.item.input_audio_transcription.failed':
+				this.handleTranscriptFailed(event);
+				break;
+
+			case 'error':
+				this.fail(new VoiceInputError(
+					typeof event.error?.message === 'string'
+						? `OpenAI: ${event.error.message}`
+						: 'OpenAI reported a realtime error.',
+					'openai_realtime_error'
+				));
+				break;
+
+			default:
+				break;
+		}
+	}
+
+	handleConversationItem(event) {
+		const item = event.item;
+		if (!item || typeof item.id !== 'string') {
+			return;
+		}
+		if (typeof item.role === 'string' && item.role !== 'user') {
+			return;
+		}
+		this.registerOrderedItem(item.id, event);
+	}
+
+	registerOrderedItem(itemId, event) {
+		if (!this.model || typeof itemId !== 'string') {
+			return;
+		}
+		const hasPreviousItem = Object.prototype.hasOwnProperty.call(event, 'previous_item_id');
+		this.model.registerItem(itemId, hasPreviousItem ? event.previous_item_id : undefined);
+		this.renderTranscript();
+	}
+
+	handleTranscriptDelta(event) {
+		if (!this.model || typeof event.item_id !== 'string' || typeof event.delta !== 'string') {
+			return;
+		}
+		this.model.appendDelta(event.item_id, event.delta);
+		this.lastTranscriptEventAt = now();
+		this.renderTranscript();
+	}
+
+	handleTranscriptCompleted(event) {
+		if (!this.model || typeof event.item_id !== 'string') {
+			return;
+		}
+		this.model.completeItem(
+			event.item_id,
+			typeof event.transcript === 'string' ? event.transcript : ''
+		);
+		this.lastTranscriptEventAt = now();
+		this.renderTranscript();
+		if (this.stopRequested) {
+			this.maybeFinishStop();
+		}
+	}
+
+	handleTranscriptFailed(event) {
+		if (this.model && typeof event.item_id === 'string') {
+			this.model.failItem(event.item_id);
+			this.renderTranscript();
+		}
+		this.fail(new VoiceInputError(
+			typeof event.error?.message === 'string'
+				? `OpenAI transcription failed: ${event.error.message}`
+				: 'OpenAI transcription failed.',
+			'transcription_failed'
 		));
+	}
+
+	commitCurrentTurn() {
+		this.commitTimer = null;
+		if (!this.stopRequested || this.closing || this.finished) {
+			return;
+		}
+		if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
+			this.fail(new VoiceInputError(
+				'The OpenAI realtime connection could not commit the final audio.',
+				'data_channel_not_open'
+			));
+			return;
+		}
+		this.dataChannel.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+		if (this.rtcTrack) {
+			this.rtcTrack.enabled = false;
+		}
+		this.scheduleStopCheck(150);
+	}
+
+	maybeFinishStop() {
+		if (!this.stopRequested || !this.model || this.finished) {
+			return;
+		}
+		const current = now();
+		const elapsed = current - this.stopRequestedAt;
+		const quietFor = this.lastTranscriptEventAt > 0
+			? current - this.lastTranscriptEventAt
+			: Number.POSITIVE_INFINITY;
+		const serverHasItems = this.model.itemCount > 0;
+		const serverIsSettled = !this.model.hasPendingItems;
+		const quietMs = Number(this.session.options?.transcriptQuietMs || TRANSCRIPT_QUIET_MS);
+
+		if (serverHasItems && serverIsSettled && quietFor >= quietMs) {
+			this.finishNormally();
+			return;
+		}
+		if (!serverHasItems && !this.localVoiceDetected && elapsed >= 1200) {
+			this.finishNormally();
+			return;
+		}
+		this.scheduleStopCheck(150);
+	}
+
+	scheduleStopCheck(delay) {
+		globalThis.clearTimeout(this.stopCheckTimer);
+		this.stopCheckTimer = globalThis.setTimeout(() => this.maybeFinishStop(), delay);
+	}
+
+	finishNormally() {
+		this.finalizeSession(null);
+	}
+
+	finishAfterDeadline() {
+		if (this.stopRequested) {
+			this.finalizeSession(null);
+		}
 	}
 
 	fail(error) {
@@ -198,53 +518,155 @@ export class OpenAiRealtimeSpeechToTextProvider {
 			return;
 		}
 		this.options.onError(error);
-		this.finish();
+		this.finalizeSession(error);
 	}
 
-	finish() {
+	finalizeSession(error) {
 		if (this.finished) {
 			return;
 		}
+		const text = this.model?.getSpeechText().trim() || '';
 		this.finished = true;
-		this.stopCapture();
-		this.connection?.close();
-		this.connection = null;
-		clearTimeout(this.finalizationTimer);
-		this.finalizationTimer = null;
-		this.stopping = false;
-		this.options.onEnd({ text: this.joinText(this.committedText, this.partialText).trim() });
+		this.starting = false;
+		this.recording = false;
+		if (text && !error) {
+			this.options.onFinal(text);
+		}
+		this.cleanupRuntime();
+		this.options.onEnd({ text, error });
 	}
 
-	cleanupAfterStartFailure() {
-		this.stopCapture();
-		this.connection?.cancel();
-		this.connection = null;
-		clearTimeout(this.finalizationTimer);
-		this.finalizationTimer = null;
-		this.stopping = false;
+	async startMeter(stream) {
+		const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
+		this.audioContext = new AudioContextClass();
+		this.audioSource = this.audioContext.createMediaStreamSource(stream);
+		this.analyser = this.audioContext.createAnalyser();
+		this.analyser.fftSize = 512;
+		this.analyser.smoothingTimeConstant = 0.65;
+		this.audioSource.connect(this.analyser);
+		if (this.audioContext.state === 'suspended') {
+			await this.audioContext.resume();
+		}
+
+		const samples = new Uint8Array(this.analyser.fftSize);
+		const updateMeter = () => {
+			if (!this.analyser || this.closing || this.stopRequested || this.finished) {
+				return;
+			}
+			this.analyser.getByteTimeDomainData(samples);
+			let sum = 0;
+			let peak = 0;
+			for (const sample of samples) {
+				const normalized = (sample - 128) / 128;
+				sum += normalized * normalized;
+				peak = Math.max(peak, Math.abs(normalized));
+			}
+			const rms = Math.sqrt(sum / samples.length);
+			if (rms >= LOCAL_VOICE_RMS) {
+				this.localVoiceDetected = true;
+			}
+			this.options.onLevel(rms, peak);
+			this.meterFrame = requestFrame(updateMeter);
+		};
+		this.meterFrame = requestFrame(updateMeter);
+	}
+
+	stopMeter() {
+		if (this.meterFrame !== null) {
+			cancelFrame(this.meterFrame);
+			this.meterFrame = null;
+		}
+		try {
+			this.audioSource?.disconnect();
+		} catch (error) {
+		}
+		try {
+			this.analyser?.disconnect();
+		} catch (error) {
+		}
+		if (this.audioContext && this.audioContext.state !== 'closed') {
+			void this.audioContext.close();
+		}
+		this.audioSource = null;
+		this.analyser = null;
+		this.audioContext = null;
+		this.options.onLevel(0, 0);
+	}
+
+	cleanupRuntime() {
+		this.closing = true;
+		globalThis.clearTimeout(this.stopCheckTimer);
+		globalThis.clearTimeout(this.stopDeadlineTimer);
+		globalThis.clearTimeout(this.commitTimer);
+		this.stopCheckTimer = null;
+		this.stopDeadlineTimer = null;
+		this.commitTimer = null;
+		this.startController?.abort();
+		this.startController = null;
+		this.stopMeter();
+		if (this.dataChannel && this.dataChannel.readyState !== 'closed') {
+			this.dataChannel.close();
+		}
+		if (this.peerConnection && this.peerConnection.connectionState !== 'closed') {
+			this.peerConnection.close();
+		}
+		this.rtcTrack?.stop();
+		this.stopStream(this.captureStream);
+		this.dataChannel = null;
+		this.peerConnection = null;
+		this.rtcTrack = null;
+		this.captureStream = null;
+	}
+
+	stopStream(stream) {
+		stream?.getTracks().forEach((track) => track.stop());
+	}
+
+	renderTranscript() {
+		const text = this.model?.getSpeechText() || '';
+		if (text === this.lastRenderedText) {
+			return;
+		}
+		this.lastRenderedText = text;
+		if (text) {
+			this.options.onPartial(text);
+		}
 	}
 
 	resetState() {
-		this.committedText = '';
-		this.partialText = '';
+		this.model = new TranscriptModel('', 0, 0);
+		this.stopRequested = false;
+		this.stopRequestedAt = 0;
+		this.lastTranscriptEventAt = 0;
+		this.localVoiceDetected = false;
+		this.starting = false;
 		this.recording = false;
-		this.stopping = false;
 		this.finished = false;
-		this.hasUncommittedAudio = false;
-		clearTimeout(this.finalizationTimer);
-		this.finalizationTimer = null;
-	}
-
-	joinText(left, right) {
-		return [String(left || '').trim(), String(right || '').trim()].filter(Boolean).join(' ');
+		this.closing = false;
+		this.lastRenderedText = '';
+		globalThis.clearTimeout(this.stopCheckTimer);
+		globalThis.clearTimeout(this.stopDeadlineTimer);
+		globalThis.clearTimeout(this.commitTimer);
+		this.stopCheckTimer = null;
+		this.stopDeadlineTimer = null;
+		this.commitTimer = null;
 	}
 
 	isSupportedSession(session) {
-		return session?.provider === 'openai'
-			&& session?.transport === 'websocket'
-			&& Boolean(session.endpoint)
-			&& Boolean(session.clientToken)
-			&& session.audioEncoding === 'pcm_s16le'
-			&& Number(session.sampleRate) === 24000;
+		if (session?.provider !== 'openai'
+			|| session?.transport !== 'webrtc'
+			|| !session.endpoint
+			|| !session.clientToken
+			|| session.audioEncoding !== 'audio/pcm'
+			|| Number(session.sampleRate) !== 24000) {
+			return false;
+		}
+		if (session.expiresAt) {
+			const expiresAt = Date.parse(session.expiresAt);
+			if (Number.isFinite(expiresAt) && expiresAt <= Date.now() + 5000) {
+				return false;
+			}
+		}
+		return true;
 	}
 }

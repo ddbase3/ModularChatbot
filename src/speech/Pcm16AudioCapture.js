@@ -1,188 +1,252 @@
-function calculateRms(input) {
-	if (!input.length) {
-		return 0;
+const DEFAULT_SUPPORTED_SAMPLE_RATES = [8000, 16000, 22050, 44100, 48000];
+const DEFAULT_CHUNK_DURATION_MS = 20;
+const STOP_TIMEOUT_MS = 1500;
+
+class Deferred {
+	constructor() {
+		this.settled = false;
+		this.promise = new Promise((resolve, reject) => {
+			this.resolveInternal = resolve;
+			this.rejectInternal = reject;
+		});
+		this.promise.catch(() => {});
 	}
 
-	let sum = 0;
-	for (const sample of input) {
-		sum += sample * sample;
-	}
-
-	return Math.sqrt(sum / input.length);
-}
-
-function resample(input, sourceRate, targetRate) {
-	if (sourceRate === targetRate) {
-		return input;
-	}
-
-	const ratio = sourceRate / targetRate;
-	const length = Math.max(1, Math.round(input.length / ratio));
-	const output = new Float32Array(length);
-
-	for (let index = 0; index < length; index += 1) {
-		const start = Math.floor(index * ratio);
-		const end = Math.min(input.length, Math.max(start + 1, Math.floor((index + 1) * ratio)));
-		let sum = 0;
-
-		for (let sourceIndex = start; sourceIndex < end; sourceIndex += 1) {
-			sum += input[sourceIndex];
+	resolve(value) {
+		if (this.settled) {
+			return;
 		}
-
-		output[index] = sum / Math.max(1, end - start);
+		this.settled = true;
+		this.resolveInternal(value);
 	}
 
-	return output;
-}
-
-function floatToPcm16(input) {
-	const output = new Int16Array(input.length);
-
-	for (let index = 0; index < input.length; index += 1) {
-		const sample = Math.max(-1, Math.min(1, input[index]));
-		output[index] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-	}
-
-	return output;
-}
-
-function createWorkletModuleUrl() {
-	const source = `
-		class Base3PcmCaptureProcessor extends AudioWorkletProcessor {
-			process(inputs) {
-				const channel = inputs[0] && inputs[0][0];
-				if (channel && channel.length) {
-					this.port.postMessage(channel.slice(0));
-				}
-				return true;
-			}
+	reject(error) {
+		if (this.settled) {
+			return;
 		}
-		registerProcessor('base3-pcm-capture', Base3PcmCaptureProcessor);
-	`;
+		this.settled = true;
+		this.rejectInternal(error);
+	}
+}
 
+function withTimeout(promise, milliseconds, message) {
+	return new Promise((resolve, reject) => {
+		const timer = globalThis.setTimeout(() => reject(new Error(message)), milliseconds);
+		promise.then((value) => {
+			globalThis.clearTimeout(timer);
+			resolve(value);
+		}, (error) => {
+			globalThis.clearTimeout(timer);
+			reject(error);
+		});
+	});
+}
+
+function createWorkletModuleUrl(chunkDurationMs) {
+	const source = [
+		"class SttCaptureProcessor extends AudioWorkletProcessor {",
+		"\tconstructor(options) {",
+		"\t\tsuper();",
+		"\t\tthis.active = true;",
+		`\t\tthis.chunkSamples = Math.max(128, Math.round(sampleRate * ((options.processorOptions && options.processorOptions.chunkMs) || ${Number(chunkDurationMs) || DEFAULT_CHUNK_DURATION_MS}) / 1000));`,
+		"\t\tthis.levelSamples = Math.max(128, Math.round(sampleRate * 0.04));",
+		"\t\tthis.chunk = new Int16Array(this.chunkSamples);",
+		"\t\tthis.offset = 0; this.square = 0; this.peak = 0; this.levelCount = 0;",
+		"\t\tthis.port.onmessage = (event) => { if (event.data && event.data.type === 'stop') this.stopCapture(); };",
+		"\t}",
+		"\tprocess(inputs) {",
+		"\t\tif (!this.active) return true;",
+		"\t\tconst channels = inputs[0]; if (!channels || !channels.length) return true;",
+		"\t\tconst frames = channels[0].length;",
+		"\t\tfor (let frame = 0; frame < frames; frame++) {",
+		"\t\t\tlet sample = 0; for (let channel = 0; channel < channels.length; channel++) sample += channels[channel][frame] || 0;",
+		"\t\t\tsample = Math.max(-1, Math.min(1, sample / channels.length));",
+		"\t\t\tthis.square += sample * sample; this.peak = Math.max(this.peak, Math.abs(sample)); this.levelCount++;",
+		"\t\t\tthis.chunk[this.offset++] = sample < 0 ? Math.round(sample * 32768) : Math.round(sample * 32767);",
+		"\t\t\tif (this.offset === this.chunkSamples) this.emitChunk();",
+		"\t\t\tif (this.levelCount >= this.levelSamples) this.emitLevel();",
+		"\t\t}",
+		"\t\treturn true;",
+		"\t}",
+		"\temitChunk() { const buffer = this.chunk.buffer; this.port.postMessage({ type: 'audio', buffer }, [buffer]); this.chunk = new Int16Array(this.chunkSamples); this.offset = 0; }",
+		"\temitLevel() { const rms = this.levelCount ? Math.sqrt(this.square / this.levelCount) : 0; this.port.postMessage({ type: 'level', rms, peak: this.peak }); this.square = 0; this.peak = 0; this.levelCount = 0; }",
+		"\tstopCapture() { if (!this.active) return; this.active = false; if (this.offset) { const partial = new Int16Array(this.offset); partial.set(this.chunk.subarray(0, this.offset)); this.port.postMessage({ type: 'audio', buffer: partial.buffer }, [partial.buffer]); this.offset = 0; } this.emitLevel(); this.port.postMessage({ type: 'stopped' }); }",
+		"}",
+		"registerProcessor('stt-capture-processor', SttCaptureProcessor);"
+	].join('\n');
 	return URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
 }
 
-function concatPcm(left, right) {
-	if (!left.length) {
-		return right;
-	}
-
-	const output = new Int16Array(left.length + right.length);
-	output.set(left, 0);
-	output.set(right, left.length);
-	return output;
-}
-
-export function pcm16ToBase64(input) {
-	const bytes = new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+export function arrayBufferToBase64(buffer) {
+	const bytes = new Uint8Array(buffer);
 	let binary = '';
-	const chunkSize = 0x8000;
-
-	for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-		binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+	const step = 0x8000;
+	for (let offset = 0; offset < bytes.length; offset += step) {
+		binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + step, bytes.length)));
 	}
-
 	return btoa(binary);
 }
 
 export class Pcm16AudioCapture {
 	constructor(options = {}) {
 		this.options = {
-			sampleRate: 16000,
-			chunkDurationMs: 160,
+			chunkDurationMs: DEFAULT_CHUNK_DURATION_MS,
+			supportedSampleRates: DEFAULT_SUPPORTED_SAMPLE_RATES,
 			onChunk() {},
 			onLevel() {},
 			...options
 		};
-		this.stream = null;
-		this.audioContext = null;
-		this.sourceNode = null;
-		this.workletNode = null;
+		this.context = null;
+		this.source = null;
+		this.node = null;
 		this.silentGain = null;
-		this.workletModuleUrl = '';
-		this.pending = new Int16Array(0);
+		this.workletUrl = '';
+		this.stopped = null;
 		this.running = false;
 	}
 
-	async start() {
+	get sampleRate() {
+		return Number(this.context?.sampleRate || 0);
+	}
+
+	async start(mediaStream) {
 		if (this.running) {
 			return;
 		}
+		if (!mediaStream) {
+			throw new Error('A microphone stream is required for PCM capture.');
+		}
+		const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
+		if (!AudioContextClass || !globalThis.AudioWorkletNode) {
+			throw new Error('AudioWorklet is not available.');
+		}
 
-		this.stream = await navigator.mediaDevices.getUserMedia({
-			audio: {
-				channelCount: 1,
-				echoCancellation: true,
-				noiseSuppression: true,
-				autoGainControl: true
+		this.context = new AudioContextClass({ latencyHint: 'interactive', sampleRate: 48000 });
+		const supportedSampleRates = Array.isArray(this.options.supportedSampleRates)
+			? this.options.supportedSampleRates.map(Number)
+			: DEFAULT_SUPPORTED_SAMPLE_RATES;
+		if (!supportedSampleRates.includes(this.context.sampleRate)) {
+			const sampleRate = this.context.sampleRate;
+			await this.context.close();
+			this.context = null;
+			throw new Error(`Unsupported microphone sample rate: ${sampleRate}.`);
+		}
+
+		this.workletUrl = createWorkletModuleUrl(this.options.chunkDurationMs);
+		try {
+			await this.context.audioWorklet.addModule(this.workletUrl);
+		} catch (error) {
+			URL.revokeObjectURL(this.workletUrl);
+			this.workletUrl = '';
+			await this.context.close();
+			this.context = null;
+			throw error;
+		}
+		URL.revokeObjectURL(this.workletUrl);
+		this.workletUrl = '';
+
+		this.source = this.context.createMediaStreamSource(mediaStream);
+		this.node = new AudioWorkletNode(this.context, 'stt-capture-processor', {
+			numberOfInputs: 1,
+			numberOfOutputs: 1,
+			outputChannelCount: [1],
+			processorOptions: {
+				chunkMs: Number(this.options.chunkDurationMs) || DEFAULT_CHUNK_DURATION_MS
 			}
 		});
-		this.audioContext = new AudioContext();
-		if (this.audioContext.state === 'suspended') {
-			await this.audioContext.resume();
-		}
-		this.workletModuleUrl = createWorkletModuleUrl();
-		await this.audioContext.audioWorklet.addModule(this.workletModuleUrl);
-		this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
-		this.workletNode = new AudioWorkletNode(this.audioContext, 'base3-pcm-capture');
-		this.silentGain = this.audioContext.createGain();
+		this.silentGain = this.context.createGain();
 		this.silentGain.gain.value = 0;
-		this.workletNode.port.onmessage = (event) => this.handleAudio(event.data);
-		this.sourceNode.connect(this.workletNode);
-		this.workletNode.connect(this.silentGain);
-		this.silentGain.connect(this.audioContext.destination);
-		this.pending = new Int16Array(0);
+		this.node.connect(this.silentGain);
+		this.silentGain.connect(this.context.destination);
+		this.stopped = new Deferred();
+		this.node.port.onmessage = (event) => {
+			if (!event.data) {
+				return;
+			}
+			if (event.data.type === 'audio' && event.data.buffer instanceof ArrayBuffer) {
+				this.options.onChunk(event.data.buffer);
+				return;
+			}
+			if (event.data.type === 'level') {
+				this.options.onLevel(event.data.rms, event.data.peak);
+				return;
+			}
+			if (event.data.type === 'stopped') {
+				this.stopped.resolve();
+			}
+		};
+
+		if (this.context.state === 'suspended') {
+			await this.context.resume();
+		}
+		this.source.connect(this.node);
 		this.running = true;
 	}
 
-	stop(flush = true) {
-		if (flush && this.pending.length) {
-			this.options.onChunk(this.pending);
-		}
-		this.pending = new Int16Array(0);
-		this.running = false;
-
-		if (this.workletNode) {
-			this.workletNode.port.onmessage = null;
-			this.workletNode.disconnect();
-		}
-		this.sourceNode?.disconnect();
-		this.silentGain?.disconnect();
-		this.stream?.getTracks().forEach((track) => track.stop());
-		this.audioContext?.close();
-		this.workletNode = null;
-		this.sourceNode = null;
-		this.silentGain = null;
-		this.stream = null;
-		this.audioContext = null;
-		if (this.workletModuleUrl) {
-			URL.revokeObjectURL(this.workletModuleUrl);
-			this.workletModuleUrl = '';
-		}
-	}
-
-	handleAudio(input) {
-		if (!this.running || !(input instanceof Float32Array) || !this.audioContext) {
+	async stop() {
+		if (!this.context) {
 			return;
 		}
-
-		this.options.onLevel(calculateRms(input), Date.now());
-		const converted = floatToPcm16(resample(
-			input,
-			this.audioContext.sampleRate,
-			Number(this.options.sampleRate)
-		));
-		this.pending = concatPcm(this.pending, converted);
-
-		const chunkSamples = Math.max(
-			1,
-			Math.round(Number(this.options.sampleRate) * Number(this.options.chunkDurationMs) / 1000)
-		);
-		while (this.pending.length >= chunkSamples) {
-			const chunk = this.pending.slice(0, chunkSamples);
-			this.pending = this.pending.slice(chunkSamples);
-			this.options.onChunk(chunk);
+		if (this.running && this.node) {
+			this.node.port.postMessage({ type: 'stop' });
+			await withTimeout(
+				this.stopped?.promise || Promise.resolve(),
+				STOP_TIMEOUT_MS,
+				'The microphone capture could not be stopped cleanly.'
+			);
 		}
+		this.running = false;
+		try {
+			this.source?.disconnect();
+		} catch (error) {
+		}
+		try {
+			this.node?.disconnect();
+		} catch (error) {
+		}
+		try {
+			this.silentGain?.disconnect();
+		} catch (error) {
+		}
+		this.node && (this.node.port.onmessage = null);
+		if (this.context.state !== 'closed') {
+			await this.context.close();
+		}
+		this.context = null;
+		this.source = null;
+		this.node = null;
+		this.silentGain = null;
+		this.stopped = null;
+	}
+
+	destroy() {
+		this.running = false;
+		if (this.node) {
+			this.node.port.onmessage = null;
+		}
+		try {
+			this.source?.disconnect();
+		} catch (error) {
+		}
+		try {
+			this.node?.disconnect();
+		} catch (error) {
+		}
+		try {
+			this.silentGain?.disconnect();
+		} catch (error) {
+		}
+		if (this.context && this.context.state !== 'closed') {
+			void this.context.close();
+		}
+		if (this.workletUrl) {
+			URL.revokeObjectURL(this.workletUrl);
+		}
+		this.context = null;
+		this.source = null;
+		this.node = null;
+		this.silentGain = null;
+		this.workletUrl = '';
+		this.stopped = null;
 	}
 }
