@@ -597,6 +597,86 @@ test('disabled voice features do not create their chatbot controls', () => {
 	}
 });
 
+test('sending a message stops active voice input immediately', () => {
+	const environment = installBrowserEnvironment();
+	const fixture = createContext({
+		stt: {
+			enabled: true,
+			provider: 'browser',
+			sessionUrl: ''
+		},
+		tts: {
+			enabled: true,
+			provider: 'browser',
+			speechUrl: ''
+		},
+		dialog: true,
+		lang: 'de-DE'
+	});
+
+	try {
+		VoicePlugin.install(fixture.context);
+		const microphone = fixture.controls.get(`${fixture.context.chatbot.instanceId}-voice-microphone`);
+		microphone.definition.onActivate();
+
+		const recognition = RecognitionMock.instances[0];
+		assert.equal(recognition.started, true);
+		assert.equal(microphone.button.classList.contains('is-listening'), true);
+
+		fixture.events.emit('chatbot:sending-changed', {
+			sending: true,
+			conversationId: 'conversation-1'
+		});
+
+		const state = VoicePlugin.states.get(fixture.context.chatbot);
+		assert.equal(recognition.stopped, true);
+		assert.equal(state.recording, false);
+		assert.equal(state.recognition, null);
+		assert.equal(microphone.button.getAttribute('aria-pressed'), 'false');
+		assert.equal(microphone.button.classList.contains('is-listening'), false);
+	} finally {
+		VoicePlugin.destroy(fixture.context);
+		environment.restore();
+	}
+});
+
+test('sending a message destroys active realtime voice input immediately', async () => {
+	const environment = installBackendEnvironment();
+	const fixture = createContext(backendOptions(false));
+
+	try {
+		VoicePlugin.install(fixture.context);
+		const microphone = fixture.controls.get(`${fixture.context.chatbot.instanceId}-voice-microphone`);
+		microphone.definition.onActivate();
+
+		await waitFor(
+			() => PeerConnectionMock.instances[0]?.dataChannel?.listeners.has('open'),
+			'OpenAI data channel listener'
+		);
+		const peer = PeerConnectionMock.instances[0];
+		peer.dataChannel.open();
+		await waitFor(
+			() => VoicePlugin.states.get(fixture.context.chatbot)?.realtimeProvider?.provider?.recording,
+			'OpenAI recording state'
+		);
+
+		fixture.events.emit('chatbot:sending-changed', {
+			sending: true,
+			conversationId: 'conversation-1'
+		});
+
+		const state = VoicePlugin.states.get(fixture.context.chatbot);
+		assert.equal(state.realtimeProvider, null);
+		assert.equal(state.recording, false);
+		assert.equal(peer.connectionState, 'closed');
+		assert.equal(microphone.button.getAttribute('aria-pressed'), 'false');
+		assert.equal(microphone.button.classList.contains('is-listening'), false);
+	} finally {
+		VoicePlugin.destroy(fixture.context);
+		environment.restore();
+	}
+});
+
 test('dialog mode stops realtime input after three seconds of silence and sends the final transcript', async (t) => {
 	t.mock.timers.enable({
 		apis: ['setTimeout', 'Date'],
@@ -671,7 +751,7 @@ test('dialog mode stops realtime input after three seconds of silence and sends 
 	}
 });
 
-test('realtime input without dialog mode stops only through the microphone control', async (t) => {
+test('realtime input without dialog mode stays active until the microphone control stops it', async (t) => {
 	t.mock.timers.enable({
 		apis: ['setTimeout', 'Date'],
 		now: 1000

@@ -750,6 +750,12 @@ export const VoicePlugin = {
 			});
 		}
 
+		context.events.on('chatbot:sending-changed', ({ sending }) => {
+			if (sending) {
+				disposeRecognition(state);
+			}
+		});
+
 		context.events.on('message:completed', (message) => {
 			if (message.interaction || message.error) {
 				if (state.dialogEnabled) {
