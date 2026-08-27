@@ -60,21 +60,47 @@ function normalizeDraft(value) {
 	};
 }
 
-function normalizePendingInteraction(value) {
+function normalizeResolution(value) {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		return null;
 	}
+
+	return {
+		outcome: String(value.outcome || 'resolved').trim(),
+		source: String(value.source || '').trim(),
+		resolved_at: String(value.resolved_at || '').trim(),
+		responses: Array.isArray(value.responses)
+			? value.responses
+				.filter((response) => response && typeof response === 'object' && !Array.isArray(response))
+				.map((response) => ({
+					request_id: String(response.request_id || response.id || '').trim(),
+					decision: String(response.decision || '').trim()
+				}))
+			: []
+	};
+}
+
+function normalizeInteraction(value) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		return null;
+	}
+	const lifecycle = String(value.lifecycle || 'active').trim().toLowerCase();
 	const resumeHandle = String(value.resume_handle || '').trim();
 	const requests = Array.isArray(value.interaction_requests)
 		? value.interaction_requests.filter((request) => request && typeof request === 'object' && !Array.isArray(request))
 		: [];
-	if (!resumeHandle || requests.length === 0) {
+	if (requests.length === 0 || (lifecycle === 'active' && !resumeHandle)) {
 		return null;
 	}
 	return {
+		id: String(value.interaction_id || value.id || '').trim(),
+		lifecycle,
 		status: String(value.status || ''),
 		resume_handle: resumeHandle,
-		interaction_requests: requests
+		created_at: String(value.created_at || '').trim(),
+		expires_at: String(value.expires_at || '').trim(),
+		interaction_requests: requests,
+		resolution: normalizeResolution(value.resolution)
 	};
 }
 
@@ -108,7 +134,10 @@ export function normalizeConversationState(value) {
 		warnings: Array.isArray(value.warnings)
 			? value.warnings.map((warning) => String(warning))
 			: [],
-		pending_interaction: normalizePendingInteraction(value.pending_interaction)
+		pending_interaction: normalizeInteraction(value.pending_interaction),
+		interactions: Array.isArray(value.interactions)
+			? value.interactions.map(normalizeInteraction).filter(Boolean)
+			: []
 	};
 }
 

@@ -72,6 +72,32 @@ test('conversation state normalization preserves one pending interaction from se
 	assert.equal(state.pending_interaction.interaction_requests.length, 1);
 });
 
+test('conversation state normalization preserves terminal interaction history', () => {
+	const source = createState();
+	source.interactions = [{
+		id: 'suspension-a',
+		lifecycle: 'resolved',
+		status: 'awaiting_approval',
+		created_at: '2026-07-29T10:00:03+02:00',
+		interaction_requests: [{ id: 'request-a', kind: 'approval', title: 'Confirm action' }],
+		resolution: {
+			outcome: 'approved',
+			source: 'natural_language_ai',
+			resolved_at: '2026-07-29T10:00:04+02:00',
+			responses: [{ request_id: 'request-a', decision: 'approve' }]
+		}
+	}];
+
+	const state = normalizeConversationState(source);
+
+	assert.equal(state.interactions.length, 1);
+	assert.equal(state.interactions[0].id, 'suspension-a');
+	assert.equal(state.interactions[0].lifecycle, 'resolved');
+	assert.equal(state.interactions[0].resolution.outcome, 'approved');
+	assert.equal(state.interactions[0].resolution.source, 'natural_language_ai');
+	assert.equal(state.interactions[0].resume_handle, '');
+});
+
 test('conversation state normalization accepts an unsaved draft without an active chat', () => {
 	const state = normalizeConversationState({
 		conversations: [],
