@@ -1,9 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { Chatbot, formatMessageTimestamp } from '../src/Chatbot.js';
+import { Chatbot, formatMessageTimestamp, normalizeDomClasses } from '../src/Chatbot.js';
 import { ChatbotEventBus } from '../src/core/ChatbotEventBus.js';
 import { MessageActionsPlugin } from '../src/plugins/MessageActionsPlugin.js';
+
+function createClassList(initial = []) {
+	const values = new Set(initial);
+
+	return {
+		add(...classNames) {
+			classNames.forEach((className) => values.add(className));
+		},
+		remove(...classNames) {
+			classNames.forEach((className) => values.delete(className));
+		},
+		contains(className) {
+			return values.has(className);
+		}
+	};
+}
 
 test('formats message timestamps as time, yesterday, or date without seconds', () => {
 	const now = new Date(2026, 7, 18, 10, 30, 0);
@@ -77,6 +93,66 @@ test('treats an unresolved layout width as compact until a real width is availab
 		globalThis.window = previousWindow;
 		globalThis.document = previousDocument;
 	}
+});
+
+test('normalizes semantic DOM class configuration', () => {
+	assert.deepEqual(normalizeDomClasses({
+		root: 'customer-chatbot theme-dark',
+		main: ['customer-chat', 'customer-chat'],
+		composer: ['customer-prompt']
+	}), {
+		root: ['customer-chatbot', 'theme-dark'],
+		main: ['customer-chat'],
+		composer: ['customer-prompt']
+	});
+
+	assert.throws(
+		() => normalizeDomClasses({ unknown: 'customer-class' }),
+		/Unknown Chatbot DOM class target/
+	);
+});
+
+test('applies configured classes to semantic DOM targets and clears only added classes', () => {
+	const root = {
+		classList: createClassList(['base3-chatbot', 'host-existing']),
+		querySelector(selector) {
+			return elements[selector] || null;
+		}
+	};
+	const elements = {
+		'[data-chatbot-main]': { classList: createClassList(['base3-chatbot-main']) },
+		'[data-chatbot-composer]': { classList: createClassList(['base3-chatbot-composer', 'host-prompt']) },
+		'[data-chatbot-actions]': { classList: createClassList(['base3-chatbot-actions']) },
+		'[data-chatbot-ai-notice]': { classList: createClassList(['base3-chatbot-ai-notice']) }
+	};
+	const chatbot = {
+		root,
+		domClasses: normalizeDomClasses({
+			root: ['customer-chatbot', 'host-existing'],
+			main: 'customer-chat',
+			composer: ['customer-prompt', 'host-prompt'],
+			actions: 'customer-actions',
+			ai_notice: 'customer-notice'
+		}),
+		domClassAssignments: []
+	};
+
+	Chatbot.prototype.applyDomClasses.call(chatbot);
+
+	assert.equal(root.classList.contains('customer-chatbot'), true);
+	assert.equal(root.classList.contains('host-existing'), true);
+	assert.equal(elements['[data-chatbot-main]'].classList.contains('customer-chat'), true);
+	assert.equal(elements['[data-chatbot-composer]'].classList.contains('customer-prompt'), true);
+	assert.equal(elements['[data-chatbot-actions]'].classList.contains('customer-actions'), true);
+	assert.equal(elements['[data-chatbot-ai-notice]'].classList.contains('customer-notice'), true);
+
+	Chatbot.prototype.clearDomClasses.call(chatbot);
+
+	assert.equal(root.classList.contains('customer-chatbot'), false);
+	assert.equal(root.classList.contains('host-existing'), true);
+	assert.equal(elements['[data-chatbot-main]'].classList.contains('customer-chat'), false);
+	assert.equal(elements['[data-chatbot-composer]'].classList.contains('customer-prompt'), false);
+	assert.equal(elements['[data-chatbot-composer]'].classList.contains('host-prompt'), true);
 });
 
 test('resets streamed assistant text without removing the currently visible progress', () => {

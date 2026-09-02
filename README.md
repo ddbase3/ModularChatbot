@@ -63,6 +63,39 @@ await mountChatbot(root, {
 
 The module keeps mounted instances in a `WeakMap`. It does not expose global constructors or instance properties on DOM elements.
 
+## DOM class targets
+
+Hosts can add project-specific classes through the `domClasses` option without changing the built-in chatbot classes or reaching into the DOM after mounting.
+
+```javascript
+await mountChatbot(root, {
+	serviceUrl: '/chatbot',
+	domClasses: {
+		root: ['customer-chatbot', 'theme-dark'],
+		main: 'customer-chat',
+		composer: ['customer-prompt']
+	}
+});
+```
+
+Each target accepts one whitespace-separated class string or an array of class strings.
+
+| Target | DOM area |
+| --- | --- |
+| `root` | complete chatbot root |
+| `conversation_panel` | conversation navigation panel |
+| `opening` | opening or initial message |
+| `main` | main chat area |
+| `messages` | message log |
+| `suggestions` | suggestion area |
+| `canvas` | canvas side area |
+| `composer` | complete prompt composer |
+| `input` | prompt textarea |
+| `actions` | composer action row |
+| `ai_notice` | AI notice |
+
+Targets are semantic names, not CSS selectors. Unknown targets are rejected. Existing classes are preserved, and classes added by the mounted instance are removed again during `destroy()` unless they already existed before mounting.
+
 ## Conversation plugin
 
 `ConversationPlugin` is the only owner of the browser-side conversation selection. It registers the chat-list and new-chat controls immediately, then loads the active conversation from the configured server endpoints. The controls remain disabled until the server state is available. Failure of the optional history endpoint leaves only these controls disabled; the chatbot core, its other controls and the configured main heading remain usable.

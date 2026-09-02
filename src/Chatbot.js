@@ -92,6 +92,7 @@ const defaultOptions = {
 	transportMode: 'auto',
 	configGroup: '',
 	configName: '',
+	domClasses: {},
 	plugins: [],
 	pluginOptions: {},
 	messageIcons: {
@@ -101,6 +102,19 @@ const defaultOptions = {
 		opening: ''
 	},
 	strings: defaultStrings
+};
+
+const domClassTargets = {
+	conversation_panel: '[data-chatbot-conversation-panel]',
+	opening: '[data-chatbot-opening-message]',
+	main: '[data-chatbot-main]',
+	messages: '[data-chatbot-messages]',
+	suggestions: '[data-chatbot-suggestions]',
+	canvas: '[data-chatbot-canvas]',
+	composer: '[data-chatbot-composer]',
+	input: '[data-chatbot-input]',
+	actions: '[data-chatbot-actions]',
+	ai_notice: '[data-chatbot-ai-notice]'
 };
 
 function createId(prefix) {
@@ -192,6 +206,37 @@ function normalizeMessage(value) {
 	};
 }
 
+export function normalizeDomClasses(value = {}) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error('Chatbot domClasses must be an object.');
+	}
+
+	const normalized = {};
+	for (const [target, classes] of Object.entries(value)) {
+		if (target !== 'root' && !Object.hasOwn(domClassTargets, target)) {
+			throw new Error(`Unknown Chatbot DOM class target "${target}".`);
+		}
+
+		const values = Array.isArray(classes) ? classes : [classes];
+		const names = [];
+		for (const entry of values) {
+			if (typeof entry !== 'string') {
+				throw new Error(`Chatbot DOM classes for "${target}" must be a string or array of strings.`);
+			}
+
+			entry.trim().split(/\s+/).filter(Boolean).forEach((className) => {
+				if (!names.includes(className)) {
+					names.push(className);
+				}
+			});
+		}
+
+		normalized[target] = names;
+	}
+
+	return normalized;
+}
+
 export class Chatbot {
 	constructor(root, options = {}) {
 		this.root = resolveElement(root);
@@ -233,8 +278,11 @@ export class Chatbot {
 		this.compactLayout = false;
 		this.layoutObserver = null;
 		this.windowLayoutHandler = null;
+		this.domClasses = normalizeDomClasses(this.options.domClasses);
+		this.domClassAssignments = [];
 
 		this.elements = this.resolveElements();
+		this.applyDomClasses();
 		this.registerBuiltInCommands();
 	}
 
@@ -265,6 +313,33 @@ export class Chatbot {
 			canvasContent: query('[data-chatbot-canvas-content]', false),
 			canvasClose: query('[data-chatbot-canvas-close]', false)
 		};
+	}
+
+	applyDomClasses() {
+		for (const [target, classNames] of Object.entries(this.domClasses)) {
+			const element = target === 'root'
+				? this.root
+				: this.root.querySelector(domClassTargets[target]);
+			if (!element) {
+				continue;
+			}
+
+			for (const className of classNames) {
+				if (element.classList.contains(className)) {
+					continue;
+				}
+
+				element.classList.add(className);
+				this.domClassAssignments.push({ element, className });
+			}
+		}
+	}
+
+	clearDomClasses() {
+		this.domClassAssignments.forEach(({ element, className }) => {
+			element.classList.remove(className);
+		});
+		this.domClassAssignments = [];
 	}
 
 	registerBuiltInCommands() {
@@ -1126,6 +1201,7 @@ export class Chatbot {
 		this.ui.clear();
 		this.commands.clear();
 		this.events.clear();
+		this.clearDomClasses();
 		this.root.dataset.chatbotState = 'destroyed';
 		this.initialized = false;
 	}

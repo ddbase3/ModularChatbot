@@ -53,6 +53,30 @@ The initial display provides:
 
 Additional slots can be added by displays without changing plugin APIs.
 
+## DOM class targets
+
+Project-specific styling is configured through the core `domClasses` option. It uses semantic target names instead of arbitrary CSS selectors, so host styling depends on the public chatbot DOM contract rather than private markup details.
+
+The current targets are:
+
+| Target | Contract element |
+| --- | --- |
+| `root` | chatbot root passed to `mountChatbot()` |
+| `conversation_panel` | `[data-chatbot-conversation-panel]` |
+| `opening` | `[data-chatbot-opening-message]` |
+| `main` | `[data-chatbot-main]` |
+| `messages` | `[data-chatbot-messages]` |
+| `suggestions` | `[data-chatbot-suggestions]` |
+| `canvas` | `[data-chatbot-canvas]` |
+| `composer` | `[data-chatbot-composer]` |
+| `input` | `[data-chatbot-input]` |
+| `actions` | `[data-chatbot-actions]` |
+| `ai_notice` | `[data-chatbot-ai-notice]` |
+
+The client validates the target names once during construction, applies the configured classes before plugin installation, and tracks only classes it actually added. `destroy()` removes those tracked classes while preserving classes that were already present on the host markup.
+
+New stable styling regions should be exposed by adding one semantic target and one corresponding `data-chatbot-*` contract marker. Plugins should continue to use their provided context and UI slots instead of depending on these styling targets for behavior.
+
 ## Multiple instances
 
 Every `Chatbot` receives one root element. All queries and listeners are scoped to that root and its lifecycle. Conversation identity is separate from widget identity, so multiple widgets can intentionally use the same conversation without sharing DOM state.
