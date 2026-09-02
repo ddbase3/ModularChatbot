@@ -389,16 +389,24 @@
 
 .base3-chatbot-voice-microphone::before {
 	z-index: 0;
-	inset: -0.08rem;
-	border: 1.5px solid currentColor;
+	inset: -1.05rem;
+	background: radial-gradient(
+		circle at center,
+		transparent 0 1.38rem,
+		rgba(76, 110, 245, 0.78) 1.42rem,
+		rgba(118, 87, 255, 0.68) 1.68rem,
+		rgba(91, 141, 239, 0.56) 1.94rem,
+		rgba(42, 180, 196, 0.42) 2.18rem,
+		transparent 2.4rem
+	);
+	clip-path: circle(1.56rem at 50% 50%);
 	opacity: 0;
-	transform: scale(0.9);
 }
 
 .base3-chatbot-voice-microphone.is-listening::before {
-	opacity: calc(0.1 + (var(--voice-level) * 0.22));
-	transform: scale(calc(1 + (var(--voice-level) * 0.14)));
-	transition: transform 70ms linear, opacity 70ms linear;
+	opacity: calc(0.46 + (var(--voice-level) * 0.46));
+	transition: opacity 65ms linear;
+	animation: base3-chatbot-voice-listening-pulse 1.05s ease-in-out infinite;
 }
 
 .base3-chatbot-voice-microphone::after {
@@ -409,18 +417,30 @@
 	opacity: 0;
 }
 
+.base3-chatbot-voice-microphone.is-listening::after {
+	opacity: 0;
+	transform: none;
+}
+
 .base3-chatbot-voice-microphone.is-starting::after {
-	opacity: 0.38;
+	opacity: 0.58;
 	animation: base3-chatbot-voice-connecting 850ms linear infinite;
 }
 
 .base3-chatbot-voice-microphone.is-starting img {
-	opacity: 0.38;
+	opacity: 0.3;
+	transform: scale(0.88);
+}
+
+.base3-chatbot-voice-microphone.is-listening img {
+	opacity: 1;
+	transform: none;
 }
 
 .base3-chatbot-voice-microphone img {
 	position: relative;
 	z-index: 2;
+	transition: transform 65ms linear, opacity 120ms ease;
 }
 
 @keyframes base3-chatbot-voice-connecting {
@@ -429,14 +449,28 @@
 	}
 }
 
+@keyframes base3-chatbot-voice-listening-pulse {
+	0%, 100% {
+		clip-path: circle(calc(1.5rem + (var(--voice-level) * 0.62rem)) at 50% 50%);
+		filter: brightness(0.96) drop-shadow(0 0 0.08rem rgba(76, 110, 245, 0.42));
+	}
+	50% {
+		clip-path: circle(calc(1.64rem + (var(--voice-level) * 0.76rem)) at 50% 50%);
+		filter: brightness(1.08) drop-shadow(0 0 0.2rem rgba(42, 180, 196, 0.34));
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.base3-chatbot-composer,
 	.base3-chatbot-input,
-	.base3-chatbot-voice-microphone::before {
+	.base3-chatbot-voice-microphone::before,
+	.base3-chatbot-voice-microphone::after,
+	.base3-chatbot-voice-microphone img {
 		transition: none;
 	}
 
-	.base3-chatbot-voice-microphone.is-starting::after {
+	.base3-chatbot-voice-microphone.is-starting::after,
+	.base3-chatbot-voice-microphone.is-listening::before {
 		animation: none;
 	}
 }
