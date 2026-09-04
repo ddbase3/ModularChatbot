@@ -37,7 +37,8 @@ function normalizeMessage(value) {
 		timestamp: String(value.timestamp || value.created_at || ''),
 		feedback: value.feedback === null || value.feedback === undefined
 			? null
-			: String(value.feedback)
+			: String(value.feedback),
+		status: String(value.status || '').trim().toLowerCase()
 	};
 }
 

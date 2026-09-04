@@ -579,7 +579,7 @@ async function startRealtimeRecognition(context, options, state) {
 }
 
 function startRecognition(context, options, state) {
-	if (state.starting || state.recording || state.speaking || context.chatbot.sending) {
+	if (state.starting || state.recording || state.speaking || (context.chatbot.sending && state.dialogEnabled)) {
 		return;
 	}
 
@@ -634,6 +634,9 @@ function toggleRecognition(context, options, state) {
 function toggleDialogMode(context, options, state) {
 	if (state.dialogEnabled) {
 		endDialogMode(context, state);
+		return;
+	}
+	if (context.chatbot.sending) {
 		return;
 	}
 
@@ -766,12 +769,21 @@ export const VoicePlugin = {
 			if (!state.speechEnabled && !state.dialogEnabled) {
 				return;
 			}
+			if (state.recording && !state.dialogEnabled) {
+				return;
+			}
 
 			speak(context, options, state, message.rawText, () => {
 				if (state.dialogEnabled) {
 					startRecognition(context, options, state);
 				}
 			});
+		});
+
+		context.events.on('message:cancelled', () => {
+			if (state.dialogEnabled) {
+				endDialogMode(context, state);
+			}
 		});
 
 		context.events.on('message:error', () => {

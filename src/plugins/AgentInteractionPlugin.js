@@ -112,22 +112,6 @@ function terminalStatus(context, interaction) {
 	return context.getString(labels[outcome] || 'interactionResolved');
 }
 
-function terminalRequestStatus(context, interaction, request) {
-	const response = interaction.resolution?.responses?.find(
-		(item) => item.request_id === String(request.id || '').trim()
-	);
-	if (!response) {
-		return '';
-	}
-	const labels = {
-		approve: 'interactionApproved',
-		deny: 'interactionDenied',
-		submit: 'interactionSubmitted'
-	};
-	const key = labels[String(response.decision || '').toLowerCase()];
-	return key ? context.getString(key) : '';
-}
-
 function renderTerminalInteraction(context, container, interaction) {
 	const header = document.createElement('div');
 	header.className = 'base3-chatbot-interaction-terminal-header';
@@ -151,14 +135,6 @@ function renderTerminalInteraction(context, container, interaction) {
 		const heading = document.createElement('h3');
 		heading.textContent = String(request.title || context.getString('interactionRequired'));
 		card.appendChild(heading);
-
-		const requestStatus = terminalRequestStatus(context, interaction, request);
-		if (requestStatus) {
-			const result = document.createElement('span');
-			result.className = 'base3-chatbot-interaction-request-status';
-			result.textContent = requestStatus;
-			card.appendChild(result);
-		}
 
 		if (request.risk) {
 			const risk = document.createElement('span');
@@ -255,8 +231,10 @@ function renderInteraction(context, assistant, interaction) {
 	container.setAttribute('aria-label', context.getString('interactionRequired'));
 
 	if (interaction.lifecycle === 'active') {
+		assistant.element.classList.remove('has-terminal-interaction');
 		renderActiveInteraction(context, container, interaction);
 	} else {
+		assistant.element.classList.add('has-terminal-interaction');
 		container.classList.add('is-terminal', `is-${interaction.lifecycle}`);
 		renderTerminalInteraction(context, container, interaction);
 	}

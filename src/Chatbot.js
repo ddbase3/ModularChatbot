@@ -2,11 +2,15 @@ import { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=c
 import { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
 import { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=plugin-context-i18n-1';
 import { ChatbotUiRegistry } from './core/ChatbotUiRegistry.js?build=conversation-draft-1';
-import { RestChatTransport } from './transport/RestChatTransport.js?build=conversation-draft-1';
+import { RestChatTransport } from './transport/RestChatTransport.js?build=cancel-draft-1';
 import { SseChatTransport } from './transport/SseChatTransport.js?build=hitl-terminal-state-1';
 import { createElement, resolveElement, scrollElementToBottom } from './utils/dom.js?build=conversation-draft-1';
 
 const defaultStrings = {
+	sendMessage: 'Send message',
+	stopResponse: 'Stop response',
+	cancelledByUser: 'You stopped the response.',
+	cancelRequestFailed: 'The response could not be stopped.',
 	emptyResponse: 'No visible response could be generated. Please try the request again.',
 	requestError: 'A technical error occurred. The request could not be completed.',
 	technicalDetails: 'Technical details',
@@ -89,6 +93,7 @@ const defaultOptions = {
 	serviceUrl: '',
 	serviceId: '',
 	turnPrepareUrl: '',
+	turnCancelUrl: '',
 	transportMode: 'auto',
 	configGroup: '',
 	configName: '',
@@ -100,6 +105,10 @@ const defaultOptions = {
 		assistant: '',
 		thinking: '',
 		opening: ''
+	},
+	sendButtonIcons: {
+		send: '',
+		stop: ''
 	},
 	initialAssistantBranding: {
 		logo: '',
@@ -206,7 +215,8 @@ function normalizeMessage(value) {
 		timestamp: String(value.timestamp || value.created_at || '').trim(),
 		feedback: value.feedback === null || value.feedback === undefined
 			? null
-			: String(value.feedback)
+			: String(value.feedback),
+		status: String(value.status || '').trim().toLowerCase()
 	};
 }
 
@@ -258,6 +268,10 @@ export class Chatbot {
 				...defaultOptions.messageIcons,
 				...(options.messageIcons || {})
 			},
+			sendButtonIcons: {
+				...defaultOptions.sendButtonIcons,
+				...(options.sendButtonIcons || {})
+			},
 			initialAssistantBranding: {
 				...defaultOptions.initialAssistantBranding,
 				...(options.initialAssistantBranding || {})
@@ -277,6 +291,8 @@ export class Chatbot {
 		this.transport = null;
 		this.initialized = false;
 		this.sending = false;
+		this.activeTurnId = '';
+		this.cancellationRequested = false;
 		this.pendingInteraction = null;
 		this.activeAssistant = null;
 		this.renderTimer = null;
@@ -315,6 +331,7 @@ export class Chatbot {
 			composer: query('[data-chatbot-composer]'),
 			input: query('[data-chatbot-input]'),
 			sendButton: query('[data-chatbot-send]'),
+			sendButtonIcon: query('[data-chatbot-send-icon]', false),
 			status: query('[data-chatbot-status]', false),
 			canvas: query('[data-chatbot-canvas]', false),
 			canvasTitle: query('[data-chatbot-canvas-title]', false),
@@ -436,11 +453,15 @@ export class Chatbot {
 	bindDomEvents() {
 		this.elements.sendButton.addEventListener('click', (event) => {
 			event.preventDefault();
+			if (this.sending) {
+				this.cancelCurrentTurn();
+				return;
+			}
 			this.send();
 		}, { signal: this.signal });
 
 		this.elements.input.addEventListener('keydown', (event) => {
-			if (event.key === 'Enter' && !event.shiftKey) {
+			if (event.key === 'Enter' && !event.shiftKey && !this.sending) {
 				event.preventDefault();
 				this.send();
 			}
@@ -586,6 +607,9 @@ export class Chatbot {
 	renderHydratedMessage(message, options = {}) {
 		if (message.role === 'user') {
 			const element = this.appendUserMessage(message.content, message);
+			if (message.status === 'cancelled') {
+				this.appendCancelledStatus();
+			}
 			this.events.emit('message:hydrated', {
 				id: message.id,
 				element,
@@ -685,9 +709,10 @@ export class Chatbot {
 			return;
 		}
 
-		const raw = options.text !== undefined
-			? String(options.text)
-			: String(this.elements.input.value || '');
+		const composerOwned = options.text === undefined;
+		const raw = composerOwned
+			? String(this.elements.input.value || '')
+			: String(options.text);
 		const text = raw.trim();
 		if (!text) {
 			return;
@@ -700,8 +725,12 @@ export class Chatbot {
 			this.pendingInteraction = null;
 		}
 
+		const turnId = createId('turn');
+		this.activeTurnId = turnId;
+		this.cancellationRequested = false;
 		let payload = {
 			prompt: text,
+			turn_id: turnId,
 			transport_mode: this.resolveTransportMode(),
 			config_group: String(this.options.configGroup || ''),
 			config_name: String(this.options.configName || '')
@@ -725,11 +754,17 @@ export class Chatbot {
 			}
 		}
 
+		if (composerOwned) {
+			this.setComposerValue('');
+		}
 		this.setSending(true);
 		try {
 			payload = await this.pluginManager.prepareRequest(payload);
 			payload = this.pluginManager.transformRequest(payload);
 		} catch (error) {
+			if (composerOwned && !String(this.elements.input.value || '').trim()) {
+				this.setComposerValue(raw);
+			}
 			this.setSending(false);
 			if (error?.name !== 'AbortError') {
 				this.events.emit('chatbot:error', error);
@@ -740,6 +775,7 @@ export class Chatbot {
 
 		this.events.emit('message:starting', {
 			text,
+			turnId,
 			conversationId: this.conversationId
 		});
 		this.elements.suggestions.replaceChildren();
@@ -751,7 +787,6 @@ export class Chatbot {
 		if (options.displayUserMessage !== false) {
 			this.appendUserMessage(raw, { timestamp: new Date().toISOString() });
 		}
-		this.setComposerValue('');
 		this.scrollToBottom();
 
 		const assistant = this.createAssistantMessage();
@@ -830,7 +865,14 @@ export class Chatbot {
 			return {};
 		}
 		if (eventName === 'done') {
-			this.finishActiveMessage();
+			const status = payload && typeof payload === 'object'
+				? String(payload.status || '')
+				: String(payload || '');
+			if (status === 'cancelled') {
+				this.cancelActiveMessage();
+			} else {
+				this.finishActiveMessage();
+			}
 			return { close: true };
 		}
 		if (eventName === 'error') {
@@ -938,6 +980,47 @@ export class Chatbot {
 			conversationId: this.conversationId
 		});
 		this.scrollMessageToStart(assistant);
+	}
+
+	cancelActiveMessage() {
+		const assistant = this.activeAssistant;
+		this.pendingInteraction = null;
+
+		if (this.renderTimer) {
+			window.clearTimeout(this.renderTimer);
+			this.renderTimer = null;
+		}
+
+		if (assistant && !assistant.completed) {
+			assistant.completed = true;
+			this.hideThinking(assistant);
+			assistant.activity?.remove();
+			assistant.actions?.replaceChildren();
+			if (assistant.rawText.trim()) {
+				assistant.element.classList.add('is-cancelled');
+				this.renderAssistant(assistant);
+			} else {
+				assistant.element.remove();
+			}
+		}
+
+		this.appendCancelledStatus();
+		this.setSending(false);
+		this.events.emit('message:cancelled', {
+			...(assistant || {}),
+			conversationId: this.conversationId
+		});
+		this.scrollToBottom();
+	}
+
+	appendCancelledStatus() {
+		const status = createElement('div', {
+			className: 'base3-chatbot-turn-cancelled',
+			text: this.getString('cancelledByUser'),
+			attributes: { role: 'status' }
+		});
+		this.elements.messages.appendChild(status);
+		return status;
 	}
 
 	renderError(payload) {
@@ -1181,10 +1264,68 @@ export class Chatbot {
 		});
 	}
 
+	async cancelCurrentTurn() {
+		if (!this.sending || this.cancellationRequested || !this.activeTurnId || !this.options.turnCancelUrl) {
+			return;
+		}
+
+		this.cancellationRequested = true;
+		this.updateSendButton();
+		try {
+			const response = await fetch(this.options.turnCancelUrl, {
+				method: 'POST',
+				credentials: 'include',
+				headers: {
+					'Accept': 'application/json',
+					'Content-Type': 'application/json; charset=UTF-8'
+				},
+				body: JSON.stringify({ turn_id: this.activeTurnId }),
+				signal: this.signal
+			});
+			const result = await response.json().catch(() => null);
+			if (!response.ok || result?.ok !== true) {
+				throw new Error(result?.error ? String(result.error) : this.getString('cancelRequestFailed'));
+			}
+		} catch (error) {
+			if (error?.name === 'AbortError') {
+				return;
+			}
+			this.cancellationRequested = false;
+			this.updateSendButton();
+			this.announce(this.getString('cancelRequestFailed'));
+			this.events.emit('chatbot:error', error);
+		}
+	}
+
+	updateSendButton() {
+		const canStop = this.sending && Boolean(this.activeTurnId) && Boolean(this.options.turnCancelUrl);
+		const stopping = canStop;
+		const label = this.getString(stopping ? 'stopResponse' : 'sendMessage');
+		this.elements.sendButton.disabled = this.sending
+			? (!canStop || this.cancellationRequested)
+			: false;
+		this.elements.sendButton.setAttribute('aria-label', label);
+		this.elements.sendButton.title = label;
+		this.elements.sendButton.dataset.chatbotAction = stopping ? 'stop' : 'send';
+
+		if (this.elements.sendButtonIcon) {
+			const icon = stopping
+				? String(this.options.sendButtonIcons?.stop || '')
+				: String(this.options.sendButtonIcons?.send || '');
+			if (icon) {
+				this.elements.sendButtonIcon.src = icon;
+			}
+		}
+	}
+
 	setSending(sending) {
 		this.sending = Boolean(sending);
-		this.elements.sendButton.disabled = this.sending;
-		this.elements.input.disabled = this.sending;
+		if (!this.sending) {
+			this.activeTurnId = '';
+			this.cancellationRequested = false;
+		}
+		this.elements.input.disabled = false;
+		this.updateSendButton();
 		this.root.dataset.chatbotState = this.sending ? 'sending' : 'ready';
 		this.events.emit('chatbot:sending-changed', {
 			sending: this.sending,

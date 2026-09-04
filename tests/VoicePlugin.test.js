@@ -640,6 +640,73 @@ test('sending a message stops active voice input immediately', () => {
 	}
 });
 
+test('manual browser voice input can be started while the agent is still sending', () => {
+	const environment = installBrowserEnvironment();
+	const fixture = createContext({
+		stt: {
+			enabled: true,
+			provider: 'browser',
+			sessionUrl: ''
+		},
+		tts: {
+			enabled: true,
+			provider: 'browser',
+			speechUrl: ''
+		},
+		dialog: false,
+		lang: 'de-DE'
+	});
+
+	try {
+		VoicePlugin.install(fixture.context);
+		fixture.context.chatbot.sending = true;
+		const microphone = fixture.controls.get(`${fixture.context.chatbot.instanceId}-voice-microphone`);
+		microphone.definition.onActivate();
+
+		const state = VoicePlugin.states.get(fixture.context.chatbot);
+		assert.equal(RecognitionMock.instances.length, 1);
+		assert.equal(RecognitionMock.instances[0].started, true);
+		assert.equal(state.recording, true);
+		assert.equal(microphone.button.getAttribute('aria-pressed'), 'true');
+	} finally {
+		VoicePlugin.destroy(fixture.context);
+		environment.restore();
+	}
+});
+
+test('dialog mode stays serialized while the agent is sending', () => {
+	const environment = installBrowserEnvironment();
+	const fixture = createContext({
+		stt: {
+			enabled: true,
+			provider: 'browser',
+			sessionUrl: ''
+		},
+		tts: {
+			enabled: true,
+			provider: 'browser',
+			speechUrl: ''
+		},
+		dialog: true,
+		lang: 'de-DE'
+	});
+
+	try {
+		VoicePlugin.install(fixture.context);
+		fixture.context.chatbot.sending = true;
+		const dialog = fixture.controls.get(`${fixture.context.chatbot.instanceId}-voice-dialog`);
+		dialog.definition.onActivate();
+
+		const state = VoicePlugin.states.get(fixture.context.chatbot);
+		assert.equal(state.dialogEnabled, false);
+		assert.equal(dialog.button.getAttribute('aria-pressed'), undefined);
+		assert.equal(RecognitionMock.instances.length, 0);
+	} finally {
+		VoicePlugin.destroy(fixture.context);
+		environment.restore();
+	}
+});
+
 test('sending a message destroys active realtime voice input immediately', async () => {
 	const environment = installBackendEnvironment();
 	const fixture = createContext(backendOptions(false));

@@ -288,3 +288,125 @@ test('does not add message actions to the initial assistant message', () => {
 		}
 	}));
 });
+
+test('sending leaves the composer editable and turns the primary action into stop', () => {
+	const button = {
+		disabled: false,
+		title: '',
+		dataset: {},
+		attributes: new Map(),
+		setAttribute(name, value) {
+			this.attributes.set(name, String(value));
+		}
+	};
+	const icon = { src: '/send.svg' };
+	const emitted = [];
+	let focusCount = 0;
+	const chatbot = Object.create(Chatbot.prototype);
+	chatbot.sending = false;
+	chatbot.activeTurnId = 'turn-1';
+	chatbot.cancellationRequested = false;
+	chatbot.conversationId = 'conversation-1';
+	chatbot.options = {
+		turnCancelUrl: '/cancel',
+		sendButtonIcons: {
+			send: '/send.svg',
+			stop: '/stop.svg'
+		}
+	};
+	chatbot.elements = {
+		input: { disabled: true },
+		sendButton: button,
+		sendButtonIcon: icon
+	};
+	chatbot.root = { dataset: {} };
+	chatbot.events = {
+		emit(name, payload) {
+			emitted.push({ name, payload });
+		}
+	};
+	chatbot.getString = (key) => ({
+		sendMessage: 'Send message',
+		stopResponse: 'Stop response'
+	}[key] || key);
+	chatbot.focusComposer = () => {
+		focusCount += 1;
+	};
+
+	chatbot.setSending(true);
+	assert.equal(chatbot.elements.input.disabled, false);
+	assert.equal(button.disabled, false);
+	assert.equal(button.dataset.chatbotAction, 'stop');
+	assert.equal(button.attributes.get('aria-label'), 'Stop response');
+	assert.equal(icon.src, '/stop.svg');
+	assert.equal(chatbot.root.dataset.chatbotState, 'sending');
+
+	chatbot.cancellationRequested = true;
+	chatbot.updateSendButton();
+	assert.equal(button.disabled, true);
+
+	chatbot.setSending(false);
+	assert.equal(button.disabled, false);
+	assert.equal(button.dataset.chatbotAction, 'send');
+	assert.equal(icon.src, '/send.svg');
+	assert.equal(chatbot.activeTurnId, '');
+	assert.equal(chatbot.cancellationRequested, false);
+	assert.equal(chatbot.root.dataset.chatbotState, 'ready');
+	assert.equal(focusCount, 1);
+	assert.equal(emitted.at(-1).payload.sending, false);
+});
+
+test('send clears only the submitted composer text while request preparation is pending', async () => {
+	let rejectPrepare;
+	const prepare = new Promise((resolve, reject) => {
+		rejectPrepare = reject;
+	});
+	const chatbot = Object.create(Chatbot.prototype);
+	chatbot.sending = false;
+	chatbot.pendingInteraction = null;
+	chatbot.activeTurnId = '';
+	chatbot.cancellationRequested = false;
+	chatbot.conversationId = '';
+	chatbot.options = {
+		configGroup: '',
+		configName: ''
+	};
+	chatbot.elements = {
+		input: { value: 'first message' }
+	};
+	chatbot.resolveTransportMode = () => 'rest';
+	chatbot.setComposerValue = (value) => {
+		chatbot.elements.input.value = value;
+	};
+	chatbot.setSending = (sending) => {
+		chatbot.sending = Boolean(sending);
+		if (!chatbot.sending) {
+			chatbot.activeTurnId = '';
+			chatbot.cancellationRequested = false;
+		}
+	};
+	chatbot.pluginManager = {
+		prepareRequest() {
+			return prepare;
+		},
+		transformRequest(payload) {
+			return payload;
+		}
+	};
+	chatbot.events = { emit() {} };
+	chatbot.announce = () => {};
+
+	const sending = chatbot.send();
+	assert.equal(chatbot.elements.input.value, '');
+	assert.equal(chatbot.sending, true);
+	assert.match(chatbot.activeTurnId, /^turn-/);
+
+	chatbot.elements.input.value = 'next draft';
+	const error = new Error('cancel preparation');
+	error.name = 'AbortError';
+	rejectPrepare(error);
+	await sending;
+
+	assert.equal(chatbot.elements.input.value, 'next draft');
+	assert.equal(chatbot.sending, false);
+});

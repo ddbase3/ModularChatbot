@@ -34,11 +34,18 @@ export class RestChatTransport {
 				return;
 			}
 
+			if (data?.type === 'cancelled' || data?.status === 'cancelled') {
+				onEvent('done', {
+					status: 'cancelled'
+				});
+				return;
+			}
+
 			onEvent('token', {
 				text: String(data?.text || '')
 			});
 			onEvent('done', {
-				status: 'completed'
+				status: String(data?.status || 'completed')
 			});
 		} catch (error) {
 			if (error?.name === 'AbortError') {

@@ -366,10 +366,14 @@ test('hydrated conversation state restores terminal HITL history before the acti
 
 		assert.equal(assistants.length, 2);
 		assert.equal(assistants[0].content.children[0].classList.values.has('is-terminal'), true);
+		assert.equal(assistants[0].element.classList.values.has('has-terminal-interaction'), true);
 		assert.equal(assistants[0].content.children[0].children[0].children[0].textContent, 'interactionApproved');
 		assert.equal(assistants[0].content.children[0].children[0].children[1].textContent, 'interactionViaChat');
-		assert.equal(assistants[0].content.children[0].children[1].children[1].textContent, 'interactionApproved');
+		assert.equal(assistants[0].content.children[0].children[1].children.length, 2);
+		assert.equal(assistants[0].content.children[0].children[1].children[0].textContent, 'Resolved action');
+		assert.equal(assistants[0].content.children[0].children[1].children[1].textContent, 'Was approved.');
 		assert.equal(assistants[1].content.children[0].classList.values.has('is-terminal'), false);
+		assert.equal(assistants[1].element.classList.values.has('has-terminal-interaction'), false);
 		assert.equal(chatbot.pendingInteraction.id, 'suspension-active');
 	}
 	finally {
