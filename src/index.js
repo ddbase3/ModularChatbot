@@ -1,4 +1,4 @@
-import { Chatbot } from './Chatbot.js?build=dom-classes-1';
+import { Chatbot } from './Chatbot.js?build=initial-assistant-branding-html-1';
 
 const mountedChatbots = new WeakMap();
 
@@ -34,7 +34,7 @@ export function unmountChatbot(root) {
 	mountedChatbots.delete(root);
 }
 
-export { Chatbot } from './Chatbot.js?build=dom-classes-1';
+export { Chatbot } from './Chatbot.js?build=initial-assistant-branding-html-1';
 export { ChatbotCommandRegistry } from './core/ChatbotCommandRegistry.js?build=conversation-draft-1';
 export { ChatbotEventBus } from './core/ChatbotEventBus.js?build=conversation-draft-1';
 export { ChatbotPluginManager } from './core/ChatbotPluginManager.js?build=plugin-context-i18n-1';

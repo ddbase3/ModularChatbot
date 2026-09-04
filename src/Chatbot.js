@@ -101,6 +101,10 @@ const defaultOptions = {
 		thinking: '',
 		opening: ''
 	},
+	initialAssistantBranding: {
+		logo: '',
+		title: ''
+	},
 	strings: defaultStrings
 };
 
@@ -253,6 +257,10 @@ export class Chatbot {
 			messageIcons: {
 				...defaultOptions.messageIcons,
 				...(options.messageIcons || {})
+			},
+			initialAssistantBranding: {
+				...defaultOptions.initialAssistantBranding,
+				...(options.initialAssistantBranding || {})
 			}
 		};
 		this.instanceId = this.root.id || createId('base3-chatbot');
@@ -1009,6 +1017,33 @@ export class Chatbot {
 		return message;
 	}
 
+	createInitialAssistantBranding() {
+		const config = this.options.initialAssistantBranding || {};
+		const logo = this.createConfiguredIcon(
+			config.logo,
+			'base3-chatbot-initial-assistant-logo'
+		);
+		const title = String(config.title || '').trim();
+		if (!logo && title === '') {
+			return null;
+		}
+
+		const branding = createElement('div', {
+			className: 'base3-chatbot-initial-assistant-branding'
+		});
+		if (logo) {
+			branding.appendChild(logo);
+		}
+		if (title !== '') {
+			const titleElement = createElement('div', {
+				className: 'base3-chatbot-initial-assistant-title'
+			});
+			titleElement.innerHTML = title;
+			branding.appendChild(titleElement);
+		}
+		return branding;
+	}
+
 	createAssistantMessage(options = {}) {
 		const initial = options.initial === true;
 		const element = createElement('div', {
@@ -1016,6 +1051,11 @@ export class Chatbot {
 		});
 		if (initial) {
 			element.classList.add('base3-chatbot-initial-message');
+			const branding = this.createInitialAssistantBranding();
+			if (branding) {
+				element.classList.add('has-initial-assistant-branding');
+				element.appendChild(branding);
+			}
 		}
 		const messageIcon = this.createConfiguredIcon(
 			initial ? this.options.messageIcons.opening : this.options.messageIcons.assistant,

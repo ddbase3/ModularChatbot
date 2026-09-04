@@ -187,6 +187,44 @@ test('resets streamed assistant text without removing the currently visible prog
 	}
 });
 
+test('creates configured branding for the initial assistant message', () => {
+	const previousDocument = globalThis.document;
+	globalThis.document = {
+		createElement(tagName) {
+			return {
+				tagName: String(tagName).toUpperCase(),
+				className: '',
+				textContent: '',
+				children: [],
+				appendChild(child) {
+					this.children.push(child);
+				}
+			};
+		}
+	};
+
+	try {
+		const chatbot = Object.create(Chatbot.prototype);
+		chatbot.options = {
+			initialAssistantBranding: {
+				logo: '/kim-positive.svg',
+				title: '<strong>KIM</strong> fragen'
+			}
+		};
+		chatbot.createConfiguredIcon = (src, className) => ({ src, className });
+
+		const branding = chatbot.createInitialAssistantBranding();
+
+		assert.equal(branding.className, 'base3-chatbot-initial-assistant-branding');
+		assert.equal(branding.children[0].src, '/kim-positive.svg');
+		assert.equal(branding.children[0].className, 'base3-chatbot-initial-assistant-logo');
+		assert.equal(branding.children[1].className, 'base3-chatbot-initial-assistant-title');
+		assert.equal(branding.children[1].innerHTML, '<strong>KIM</strong> fragen');
+	} finally {
+		globalThis.document = previousDocument;
+	}
+});
+
 test('renders plain initial assistant text with br elements for line breaks', () => {
 	const document = {
 		createElement(tagName) {
