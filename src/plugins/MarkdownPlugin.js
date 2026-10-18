@@ -4,12 +4,37 @@ import { patchExternalLinks } from '../utils/dom.js?build=conversation-draft-1';
 const EXTENSION_LANGUAGE_PREFIX = 'language-base3-';
 const STYLE_ATTRIBUTE = 'data-base3-chatbot-extension-pending-styles';
 
+function resolveMarked(context) {
+	const marked = context.markedRenderer || context.resolveGlobal('marked');
+	return marked && typeof marked.parse === 'function' ? marked : null;
+}
+
 function getMarked(context) {
-	const marked = context.resolveGlobal('marked');
-	if (!marked || typeof marked.parse !== 'function') {
+	const marked = resolveMarked(context);
+	if (!marked) {
 		throw new Error('Markdown renderer is not available.');
 	}
 	return marked;
+}
+
+async function loadMarked(context, url) {
+	await loadScript(url);
+	if (resolveMarked(context)) {
+		return;
+	}
+
+	// UMD bundles register with RequireJS instead of window when AMD is present.
+	if (typeof globalThis.requirejs === 'function' && globalThis.define?.amd) {
+		const marked = await new Promise((resolve, reject) => {
+			globalThis.requirejs(['marked'], resolve, reject);
+		});
+		if (marked && typeof marked.parse === 'function') {
+			context.markedRenderer = marked;
+			return;
+		}
+	}
+
+	throw new Error('Markdown renderer is not available.');
 }
 
 function getDocument(context, payload) {
@@ -161,23 +186,25 @@ export const MarkdownPlugin = {
 		'markdown:render-fragment': renderMarkdownFragment
 	},
 
-	install(context) {
+	async install(context) {
 		const options = context.getPluginOptions();
 		ensureStyles(context.root);
-		if (options.scriptUrl && !context.resolveGlobal('marked')) {
-			loadScript(options.scriptUrl).catch((error) => {
-				context.events.emit('chatbot:error', error);
-			});
-		}
 		context.events.on('opening-message:loaded', ({ element }) => {
 			formatJsonCodeBlocks(element);
 			patchExternalLinks(element);
 		});
+		if (options.scriptUrl && !resolveMarked(context)) {
+			try {
+				await loadMarked(context, options.scriptUrl);
+			} catch (error) {
+				context.events.emit('chatbot:error', error);
+			}
+		}
 	},
 
 	renderMessageContent(context, renderContext) {
-		const marked = context.resolveGlobal('marked');
-		if (!marked || typeof marked.parse !== 'function') {
+		const marked = resolveMarked(context);
+		if (!marked) {
 			return false;
 		}
 		const options = typeof context.getPluginOptions === 'function' ? context.getPluginOptions() : {};
