@@ -153,7 +153,9 @@ function renderTerminalInteraction(context, container, interaction) {
 }
 
 function renderActiveInteraction(context, container, interaction) {
-	interaction.interaction_requests.forEach((request) => {
+	const requests = interaction.interaction_requests;
+	const cards = [];
+	requests.forEach((request) => {
 		const card = document.createElement('section');
 		card.className = 'base3-chatbot-interaction-card';
 
@@ -185,34 +187,96 @@ function renderActiveInteraction(context, container, interaction) {
 			card.appendChild(summary);
 		}
 		container.appendChild(card);
+		cards.push(card);
 	});
 
-	const approvalOnly = interaction.interaction_requests.every((request) => String(request.kind || '') === 'approval');
-	if (!approvalOnly) {
+	if (!requests.every((request) => String(request.kind || '') === 'approval')) {
 		return;
 	}
 
-	const actions = document.createElement('div');
-	actions.className = 'base3-chatbot-interaction-actions';
-	const approve = document.createElement('button');
-	approve.type = 'button';
-	approve.className = 'base3-chatbot-button base3-chatbot-button-primary';
-	approve.textContent = context.getString('approve');
-	const deny = document.createElement('button');
-	deny.type = 'button';
-	deny.className = 'base3-chatbot-button';
-	deny.textContent = context.getString('deny');
-
-	const submit = (decision) => {
-		approve.disabled = true;
-		deny.disabled = true;
+	const batch = requests.length > 1;
+	const choices = new Map();
+	const controls = [];
+	let submitting = false;
+	let submitAll = null;
+	const submit = (responses) => {
+		if (submitting) {
+			return;
+		}
+		submitting = true;
+		controls.forEach((button) => { button.disabled = true; });
 		container.classList.add('is-submitting');
-		context.chatbot.resumeInteraction(interaction, decision);
+		context.chatbot.resumeInteraction(interaction, responses);
 	};
-	approve.addEventListener('click', () => submit('approve'), { signal: context.signal });
-	deny.addEventListener('click', () => submit('deny'), { signal: context.signal });
-	actions.append(approve, deny);
-	container.appendChild(actions);
+
+	requests.forEach((request, index) => {
+		const actions = document.createElement('div');
+		actions.className = 'base3-chatbot-interaction-actions';
+		if (batch) {
+			actions.classList.add('base3-chatbot-interaction-choices');
+			actions.setAttribute('role', 'group');
+			actions.setAttribute('aria-label', String(request.title || context.getString('interactionRequired')));
+		}
+
+		const buttons = [];
+		for (const option of [
+			{ decision: 'approve', scope: '', label: 'approve' },
+			{ decision: 'approve', scope: 'conversation', label: 'approveConversation' },
+			{ decision: 'deny', scope: '', label: 'deny' }
+		]) {
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.className = 'base3-chatbot-button';
+			if (!batch && option.decision === 'approve' && !option.scope) {
+				button.classList.add('base3-chatbot-button-primary');
+			}
+			button.textContent = context.getString(option.label);
+			if (batch) {
+				button.setAttribute('aria-pressed', 'false');
+			}
+			button.addEventListener('click', () => {
+				const response = {
+					request_id: String(request.id || ''),
+					decision: option.decision,
+					metadata: option.scope ? { approval_scope: option.scope } : {}
+				};
+				if (!batch) {
+					submit([response]);
+					return;
+				}
+				choices.set(String(request.id || ''), response);
+				buttons.forEach((choice) => {
+					choice.setAttribute('aria-pressed', String(choice === button));
+				});
+				if (submitAll) {
+					submitAll.disabled = choices.size !== requests.length;
+				}
+			}, { signal: context.signal });
+			buttons.push(button);
+			controls.push(button);
+			actions.appendChild(button);
+		}
+		(batch ? cards[index] : container).appendChild(actions);
+	});
+
+	if (batch) {
+		const actions = document.createElement('div');
+		actions.className = 'base3-chatbot-interaction-actions';
+		submitAll = document.createElement('button');
+		submitAll.type = 'button';
+		submitAll.className = 'base3-chatbot-button base3-chatbot-button-primary';
+		submitAll.textContent = context.getString('submitDecisions');
+		submitAll.disabled = true;
+		submitAll.addEventListener('click', () => {
+			if (choices.size !== requests.length) {
+				return;
+			}
+			submit(requests.map((request) => choices.get(String(request.id || ''))));
+		}, { signal: context.signal });
+		controls.push(submitAll);
+		actions.appendChild(submitAll);
+		container.appendChild(actions);
+	}
 }
 
 function renderInteraction(context, assistant, interaction) {

@@ -1,4 +1,4 @@
-import { ConversationApi } from '../conversation/ConversationApi.js?build=conversation-draft-1';
+import { ConversationApi } from '../conversation/ConversationApi.js?build=hitl-lifecycle-1';
 import { ConversationView } from '../conversation/ConversationView.js?build=responsive-panel-initial-2';
 import { resolveReference } from './ReferencePlugin.js?build=conversation-draft-1';
 

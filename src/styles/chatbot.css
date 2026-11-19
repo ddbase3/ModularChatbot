@@ -919,8 +919,25 @@
 
 .base3-chatbot-interaction-actions {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 0.5rem;
 	margin-top: 0.75rem;
+}
+
+.base3-chatbot-interaction-choices {
+	grid-column: 1 / -1;
+	margin-top: 0.25rem;
+}
+
+.base3-chatbot-interaction-choices .base3-chatbot-button[aria-pressed="true"] {
+	outline: 2px solid #005fcc;
+	outline-offset: 2px;
+	font-weight: 700;
+}
+
+.base3-chatbot-interaction-actions .base3-chatbot-button:disabled {
+	cursor: not-allowed;
+	opacity: 0.6;
 }
 
 .base3-chatbot-button {

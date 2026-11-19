@@ -27,6 +27,8 @@ const defaultStrings = {
 	riskMedium: 'Medium',
 	riskHigh: 'High',
 	approve: 'Approve',
+	approveConversation: 'Always approve this tool in this chat',
+	submitDecisions: 'Submit decisions',
 	deny: 'Cancel',
 	yesLabel: 'Yes',
 	noLabel: 'No',
@@ -741,14 +743,14 @@ export class Chatbot {
 		if (resumeContext) {
 			payload.resume_handle = resumeContext.resume_handle;
 			payload.resume_response = text;
-			if (resumeContext.explicit_decision) {
+			if (Array.isArray(resumeContext.explicit_responses)) {
 				payload.resume_responses = JSON.stringify(
-					resumeContext.interaction_requests.map((request) => ({
-						request_id: String(request.id || ''),
-						decision: resumeContext.explicit_decision,
+					resumeContext.explicit_responses.map((response) => ({
+						request_id: response.request_id,
+						decision: response.decision,
 						input: {},
 						note: text,
-						metadata: {}
+						metadata: response.metadata
 					}))
 				);
 			}
@@ -1244,21 +1246,56 @@ export class Chatbot {
 		});
 	}
 
-	resumeInteraction(interaction, decision) {
-		if (!interaction?.resume_handle) {
+	resumeInteraction(interaction, responses) {
+		const requests = interaction?.interaction_requests;
+		if (!interaction?.resume_handle || !Array.isArray(requests) || !Array.isArray(responses)
+			|| requests.length === 0 || responses.length !== requests.length || this.sending) {
 			return;
 		}
-		decision = String(decision || '').trim();
-		if (!['approve', 'deny'].includes(decision)) {
+
+		const selected = new Map();
+		for (const response of responses) {
+			if (!response || typeof response !== 'object' || Array.isArray(response)) {
+				return;
+			}
+			const id = String(response.request_id || '').trim();
+			const decision = String(response.decision || '').trim();
+			const metadata = response.metadata || {};
+			if (!id || selected.has(id) || !['approve', 'deny'].includes(decision)
+				|| !metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+				return;
+			}
+			const scope = String(metadata.approval_scope || '');
+			if (Object.keys(metadata).some((key) => key !== 'approval_scope')
+				|| (scope !== '' && (scope !== 'conversation' || decision !== 'approve'))) {
+				return;
+			}
+			selected.set(id, {
+				request_id: id,
+				decision,
+				metadata: scope ? { approval_scope: 'conversation' } : {}
+			});
+		}
+
+		const ordered = requests.map((request) => {
+			if (String(request.kind || '') !== 'approval') {
+				return null;
+			}
+			return selected.get(String(request.id || '').trim()) || null;
+		});
+		if (ordered.some((response) => !response)
+			|| new Set(requests.map((request) => String(request.id || '').trim())).size !== requests.length) {
 			return;
 		}
 
 		this.pendingInteraction = {
 			...interaction,
-			explicit_decision: decision
+			explicit_responses: ordered
 		};
 		return this.send({
-			text: decision === 'approve' ? this.getString('approve') : this.getString('deny'),
+			text: requests.length === 1
+				? this.getString(ordered[0].decision === 'approve' ? 'approve' : 'deny')
+				: this.getString('submitDecisions'),
 			displayUserMessage: false,
 			interactionDecision: true
 		});
